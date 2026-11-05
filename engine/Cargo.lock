@@ -917,6 +917,25 @@ dependencies = [
 ]
 
 [[package]]
+name = "snet-converse"
+version = "0.1.0"
+dependencies = [
+ "serde",
+ "serde_json",
+ "sha2",
+ "snet-cloud",
+ "snet-local",
+ "snet-protocol",
+ "snet-pseudonym",
+ "snet-testkit",
+ "snet-transcript",
+ "snet-wire",
+ "tempfile",
+ "thiserror",
+ "tokio",
+]
+
+[[package]]
 name = "snet-local"
 version = "0.1.0"
 dependencies = [

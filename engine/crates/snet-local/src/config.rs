@@ -29,6 +29,27 @@ const CONTROL_TOKENS: &[&str] = &[
     "[/INST]",
 ];
 
+/// The bounds a caller may change: the context Ollama allocates, the most
+/// output tokens one request may ask for, the time one request may take and
+/// how many requests may run at once.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct LocalBounds {
+    pub context_tokens: u64,
+    pub max_output_tokens: u64,
+    pub total_timeout_seconds: u64,
+    pub max_concurrent_requests: u64,
+}
+
+fn within(field: &'static str, value: u64, minimum: u64, maximum: u64) -> Result<u64, ConfigError> {
+    if value < minimum || value > maximum {
+        return Err(invalid(
+            field,
+            format!("{value} is outside {minimum} to {maximum}"),
+        ));
+    }
+    Ok(value)
+}
+
 /// The local model and the bounds every request to it keeps.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct LocalConfig {
@@ -87,6 +108,33 @@ impl LocalConfig {
                 .map(|token| token.to_string())
                 .collect(),
         })
+    }
+
+    pub fn with_bounds(mut self, bounds: LocalBounds) -> Result<Self, ConfigError> {
+        self.context_tokens = within("context_tokens", bounds.context_tokens, 512, 131_072)?;
+        self.max_output_tokens = within("max_output_tokens", bounds.max_output_tokens, 1, 2_048)?;
+        self.total_timeout_seconds = within(
+            "total_timeout_seconds",
+            bounds.total_timeout_seconds,
+            1,
+            1_800,
+        )?;
+        self.max_concurrent_requests = within(
+            "max_concurrent_requests",
+            bounds.max_concurrent_requests,
+            1,
+            16,
+        )?;
+        Ok(self)
+    }
+
+    pub fn bounds(&self) -> LocalBounds {
+        LocalBounds {
+            context_tokens: self.context_tokens,
+            max_output_tokens: self.max_output_tokens,
+            total_timeout_seconds: self.total_timeout_seconds,
+            max_concurrent_requests: self.max_concurrent_requests,
+        }
     }
 
     pub fn address(&self) -> SocketAddr {

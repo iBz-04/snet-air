@@ -72,3 +72,33 @@ fn model_names_are_plain() {
         assert!(LocalConfig::ollama(model, None).is_err(), "{model}");
     }
 }
+
+#[test]
+fn bounds_can_be_changed_within_their_ranges() {
+    let config = LocalConfig::ollama("qwen3:4b", None).unwrap();
+    let wider = LocalBounds {
+        context_tokens: 32_768,
+        ..config.bounds()
+    };
+    assert_eq!(config.clone().with_bounds(wider).unwrap().bounds(), wider);
+    for bounds in [
+        LocalBounds {
+            context_tokens: 100,
+            ..config.bounds()
+        },
+        LocalBounds {
+            max_output_tokens: 0,
+            ..config.bounds()
+        },
+        LocalBounds {
+            total_timeout_seconds: 0,
+            ..config.bounds()
+        },
+        LocalBounds {
+            max_concurrent_requests: 17,
+            ..config.bounds()
+        },
+    ] {
+        assert!(config.clone().with_bounds(bounds).is_err(), "{bounds:?}");
+    }
+}

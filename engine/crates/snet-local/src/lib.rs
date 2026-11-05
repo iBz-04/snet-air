@@ -9,7 +9,7 @@ mod reply;
 mod request;
 
 pub use client::LocalModel;
-pub use config::{DEFAULT_OLLAMA_ADDRESS, LocalConfig};
+pub use config::{DEFAULT_OLLAMA_ADDRESS, LocalBounds, LocalConfig};
 pub use errors::{ConfigError, LocalError};
 pub use reply::{ListedModel, LocalAnswer};
 pub use request::LocalRequest;

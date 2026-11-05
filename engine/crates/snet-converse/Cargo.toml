@@ -1,0 +1,30 @@
+[package]
+name = "snet-converse"
+version = "0.1.0"
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+publish.workspace = true
+description = "The conversation protocol: the cloud model questions the local model about material it never sees"
+
+[dependencies]
+serde = { version = "1.0.229", features = ["derive"] }
+serde_json = "1.0.154"
+sha2 = "0.11.1"
+snet-cloud = { path = "../snet-cloud" }
+snet-local = { path = "../snet-local" }
+snet-protocol = { path = "../snet-protocol" }
+snet-pseudonym = { path = "../snet-pseudonym" }
+snet-transcript = { path = "../snet-transcript" }
+snet-wire = { path = "../snet-wire" }
+thiserror = "2.0.21"
+tokio = { version = "1.54.1", features = ["rt", "time"] }
+
+[dev-dependencies]
+snet-testkit = { path = "../snet-testkit" }
+tempfile = "3.27.0"
+tokio = { version = "1.54.1", features = ["macros", "rt-multi-thread"] }
+
+[lints]
+workspace = true

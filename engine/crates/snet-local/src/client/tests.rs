@@ -243,10 +243,12 @@ async fn an_unreachable_server_is_named_with_its_address() {
 #[tokio::test]
 async fn a_stalled_answer_times_out() {
     let server = Server::start(tags("qwen3:4b", DIGEST), Chat::Stall).await;
-    let mut config =
-        LocalConfig::ollama("qwen3:4b", Some(&server.kit.address.to_string())).unwrap();
-    config.total_timeout_seconds = 1;
-    let model = LocalModel::new(config);
+    let config = LocalConfig::ollama("qwen3:4b", Some(&server.kit.address.to_string())).unwrap();
+    let bounds = crate::LocalBounds {
+        total_timeout_seconds: 1,
+        ..config.bounds()
+    };
+    let model = LocalModel::new(config.with_bounds(bounds).unwrap());
     let error = model.ask(&request()).await.unwrap_err();
     assert_eq!(error, LocalError::Timeout);
 }
