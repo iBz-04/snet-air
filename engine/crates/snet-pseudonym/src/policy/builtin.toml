@@ -1,0 +1,12 @@
+dictionaries = []
+patterns = []
+passthrough = []
+
+[builtin]
+EMAIL = true
+IBAN = true
+PAYMENT_CARD = true
+TR_IDENTITY = true
+PHONE = true
+IP_ADDRESS = true
+MAC_ADDRESS = true
