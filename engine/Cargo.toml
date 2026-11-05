@@ -1,5 +1,5 @@
 [workspace]
-members = ["crates/snet-pseudonym", "crates/snet-rules", "crates/snet-testkit", "crates/snet-wire"]
+members = ["crates/snet-cloud", "crates/snet-pseudonym", "crates/snet-rules", "crates/snet-testkit", "crates/snet-wire"]
 resolver = "3"
 
 [workspace.package]
