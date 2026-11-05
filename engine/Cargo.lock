@@ -961,6 +961,19 @@ dependencies = [
 ]
 
 [[package]]
+name = "snet-transcript"
+version = "0.1.0"
+dependencies = [
+ "bytes",
+ "serde",
+ "serde_json",
+ "snet-cloud",
+ "tempfile",
+ "thiserror",
+ "tokio",
+]
+
+[[package]]
 name = "snet-wire"
 version = "0.1.0"
 dependencies = [
