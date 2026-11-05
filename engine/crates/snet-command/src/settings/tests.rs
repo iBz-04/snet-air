@@ -1,29 +1,11 @@
-use std::collections::HashMap;
 use std::path::PathBuf;
 
 use super::*;
 use crate::exit::Exit;
+use crate::test_support::FixedEnvironment;
 
-struct FixedEnvironment {
-    variables: HashMap<&'static str, &'static str>,
-    home: Option<PathBuf>,
-}
-
-impl Environment for FixedEnvironment {
-    fn variable(&self, name: &str) -> Result<Option<String>, CommandError> {
-        Ok(self.variables.get(name).map(|value| value.to_string()))
-    }
-
-    fn home_directory(&self) -> Option<PathBuf> {
-        self.home.clone()
-    }
-}
-
-fn environment(variables: &[(&'static str, &'static str)]) -> FixedEnvironment {
-    FixedEnvironment {
-        variables: variables.iter().copied().collect(),
-        home: Some(PathBuf::from("/home/someone")),
-    }
+fn environment(variables: &[(&str, &str)]) -> FixedEnvironment {
+    FixedEnvironment::new(variables)
 }
 
 fn arguments() -> AskArguments {
@@ -190,8 +172,8 @@ fn malformed_choices_are_refused() {
             .contains("is not this machine")
     );
     let homeless = FixedEnvironment {
-        variables: [("ANTHROPIC_API_KEY", "sk-1")].into_iter().collect(),
         home: None,
+        ..FixedEnvironment::new(&[("ANTHROPIC_API_KEY", "sk-1")])
     };
     assert!(error(&arguments(), &homeless).message.contains("SNET_HOME"));
 }

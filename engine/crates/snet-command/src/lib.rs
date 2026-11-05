@@ -10,6 +10,8 @@ mod exit;
 mod hardening;
 mod output;
 mod settings;
+#[cfg(test)]
+mod test_support;
 
 pub use environment::{Environment, ProcessEnvironment};
 pub use exit::{CommandError, Exit};

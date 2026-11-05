@@ -5,7 +5,7 @@ use snet_cloud::{CloudClient, CloudSwitch, EndpointConfig};
 use snet_converse::{Conversation, ConversationOutcome, ConversationTask};
 use snet_fanout::{FanOut, FanOutOutcome, FanOutTask};
 use snet_local::LocalModel;
-use snet_protocol::{CitedPassage, ProtocolError};
+use snet_protocol::{CitedPassage, Document, ProtocolError};
 use snet_pseudonym::{Policy, Restored};
 use snet_transcript::Transcript;
 
@@ -14,7 +14,7 @@ use crate::documents::{self, CONVERSATION_FILE_BYTES, FAN_OUT_FILE_BYTES};
 use crate::environment::Environment;
 use crate::exit::{CommandError, Exit};
 use crate::output::{self, Spending};
-use crate::settings;
+use crate::settings::{self, Settings};
 
 /// How a task ended.
 enum Ended {
@@ -28,6 +28,15 @@ enum Ended {
         spending: Spending,
     },
     Failed(ProtocolError),
+}
+
+/// A task ready to run: its settings, policy, files and cloud endpoint.
+struct Prepared {
+    settings: Settings,
+    question: String,
+    policy: Policy,
+    files: Vec<Document>,
+    endpoint: EndpointConfig,
 }
 
 /// `snet ask`: settings and the API key are checked before any file is read.
@@ -57,7 +66,28 @@ pub async fn run(
         .collect::<Result<Vec<_>, _>>()?;
     let endpoint = EndpointConfig::preset(&settings.cloud)
         .map_err(|error| CommandError::configuration(format!("the cloud model: {error}")))?;
+    let prepared = Prepared {
+        settings,
+        question: arguments.question.clone(),
+        policy,
+        files,
+        endpoint,
+    };
+    run_prepared(prepared, output, errors).await
+}
 
+async fn run_prepared(
+    prepared: Prepared,
+    output: &mut dyn Write,
+    errors: &mut dyn Write,
+) -> Result<Exit, CommandError> {
+    let Prepared {
+        settings,
+        question,
+        policy,
+        files,
+        endpoint,
+    } = prepared;
     let task_id = new_task_id()?;
     let transcript = Transcript::create(&settings.home, &task_id)
         .map_err(|error| CommandError::failed(format!("the transcript: {error}")))?;
@@ -74,7 +104,7 @@ pub async fn run(
     let ended = if settings.fanout {
         let task = FanOutTask {
             task_id,
-            question: arguments.question.clone(),
+            question,
             documents: files,
             limits: settings.fan_out,
         };
@@ -107,7 +137,7 @@ pub async fn run(
     } else {
         let task = ConversationTask {
             task_id,
-            question: arguments.question.clone(),
+            question,
             documents: files,
             limits: settings.conversation,
         };
@@ -187,3 +217,6 @@ fn new_task_id() -> Result<String, CommandError> {
         .map_err(|_| CommandError::failed("the system random generator failed"))?;
     Ok(format!("task-{}", snet_protocol::hex(&bytes)))
 }
+
+#[cfg(test)]
+mod tests;
