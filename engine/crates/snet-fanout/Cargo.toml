@@ -1,0 +1,32 @@
+[package]
+name = "snet-fanout"
+version = "0.1.0"
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+publish.workspace = true
+description = "The fan-out protocol: small jobs on every chunk of large material, filtered locally"
+
+[dependencies]
+futures-util = { version = "0.3.31", default-features = false, features = ["std"] }
+serde = { version = "1.0.229", features = ["derive"] }
+serde_json = "1.0.154"
+sha2 = "0.11.1"
+snet-cloud = { path = "../snet-cloud" }
+snet-local = { path = "../snet-local" }
+snet-protocol = { path = "../snet-protocol" }
+snet-pseudonym = { path = "../snet-pseudonym" }
+snet-transcript = { path = "../snet-transcript" }
+snet-wire = { path = "../snet-wire" }
+thiserror = "2.0.21"
+tokio = { version = "1.54.1", features = ["rt", "time"] }
+
+[dev-dependencies]
+serde = { version = "1.0.229", features = ["derive"] }
+snet-testkit = { path = "../snet-testkit" }
+tempfile = "3.27.0"
+tokio = { version = "1.54.1", features = ["macros", "rt-multi-thread"] }
+
+[lints]
+workspace = true
