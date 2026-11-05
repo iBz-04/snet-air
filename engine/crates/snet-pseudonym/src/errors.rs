@@ -22,7 +22,7 @@ pub enum PolicyError {
         line: usize,
         reason: &'static str,
     },
-    #[error("site pattern {position} of category {category} is refused: {reason}")]
+    #[error("policy pattern {position} of category {category} is refused: {reason}")]
     Pattern {
         position: usize,
         category: String,

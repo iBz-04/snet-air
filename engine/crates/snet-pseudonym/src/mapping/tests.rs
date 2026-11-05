@@ -2,11 +2,11 @@
 
 use crate::errors::PseudonymError;
 use crate::mapping::TaskMapping;
-use crate::test_support::{Site, cloud};
+use crate::test_support::{Fixture, cloud};
 
 fn filled() -> TaskMapping {
-    let site = Site::new();
-    let policy = site.policy(&["Ali"], "", "");
+    let fixture = Fixture::new();
+    let policy = fixture.policy(&["Ali"], "", "");
     let mut mapping = TaskMapping::new();
     policy
         .for_destination(cloud())

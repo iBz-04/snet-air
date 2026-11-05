@@ -21,12 +21,12 @@ const WORDS: &[&str] = &[
     "line", "shift", "valve", "pressure", "stop", "ok", "night", ",", ".", ";", "(", ")", "-", "!",
 ];
 
-struct Site {
+struct Fixture {
     _directory: tempfile::TempDir,
     policy: Policy,
 }
 
-fn site() -> Site {
+fn fixture() -> Fixture {
     let directory = tempfile::tempdir().unwrap();
     std::fs::set_permissions(directory.path(), PermissionsExt::from_mode(0o700)).unwrap();
     let dictionary = directory.path().join("people.txt");
@@ -42,7 +42,7 @@ fn site() -> Site {
     )
     .unwrap();
     let policy = Policy::load(&policy_path).unwrap();
-    Site {
+    Fixture {
         _directory: directory,
         policy,
     }
@@ -79,8 +79,8 @@ proptest! {
 
     #[test]
     fn planted_values_never_survive_and_restore_round_trips(text in planted_text()) {
-        let site = site();
-        let pseudonymiser = site.policy.for_destination(cloud());
+        let fixture = fixture();
+        let pseudonymiser = fixture.policy.for_destination(cloud());
         let mut mapping = TaskMapping::new();
         let sent = pseudonymiser.text(&mut mapping, &text).unwrap();
         for value in VALUES {
@@ -94,8 +94,8 @@ proptest! {
 
     #[test]
     fn pseudonymise_and_restore_never_panic(text in ".{0,200}", bytes in proptest::collection::vec(any::<u8>(), 0..200)) {
-        let site = site();
-        let pseudonymiser = site.policy.for_destination(cloud());
+        let fixture = fixture();
+        let pseudonymiser = fixture.policy.for_destination(cloud());
         let mut mapping = TaskMapping::new();
         let _ = pseudonymiser.text(&mut mapping, &text);
         let _ = mapping.restore(&text);
@@ -105,8 +105,8 @@ proptest! {
 
     #[test]
     fn json_walks_never_panic(value in json_value()) {
-        let site = site();
-        let pseudonymiser = site.policy.for_destination(cloud());
+        let fixture = fixture();
+        let pseudonymiser = fixture.policy.for_destination(cloud());
         let mut mapping = TaskMapping::new();
         let _ = pseudonymiser.json(&mut mapping, &value);
         let _ = mapping.restore_json(&value);
@@ -131,8 +131,8 @@ fn json_value() -> impl Strategy<Value = JsonValue> {
 
 #[test]
 fn restored_values_are_caught_again_next_to_any_neighbour() {
-    let site = site();
-    let pseudonymiser = site.policy.for_destination(cloud());
+    let fixture = fixture();
+    let pseudonymiser = fixture.policy.for_destination(cloud());
     let mut mapping = TaskMapping::new();
     let sent = pseudonymiser
         .text(&mut mapping, &VALUES.join(" ; "))
@@ -166,8 +166,8 @@ fn restored_values_are_caught_again_next_to_any_neighbour() {
 #[test]
 fn errors_and_debug_output_hold_no_values() {
     const MARKER: &str = "Zeynep Kaya";
-    let site = site();
-    let pseudonymiser = site.policy.for_destination(cloud());
+    let fixture = fixture();
+    let pseudonymiser = fixture.policy.for_destination(cloud());
     let mut mapping = TaskMapping::new();
     let sent = pseudonymiser
         .text(&mut mapping, &format!("{MARKER} geldi"))
@@ -189,7 +189,7 @@ fn errors_and_debug_output_hold_no_values() {
         format!("{restored:?}"),
         format!("{restored_json:?}"),
         format!("{mapping:?}"),
-        format!("{:?}", site.policy),
+        format!("{:?}", fixture.policy),
     ];
     for text in printed.iter().chain(
         errors

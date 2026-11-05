@@ -130,10 +130,10 @@ fn detect_dictionaries(policy: &Policy, text: &str, found: &mut Vec<Detection>) 
 /// from a position finds the leftmost start at or after it, so the
 /// positions in between can hold no match.
 fn detect_patterns(policy: &Policy, text: &str, found: &mut Vec<Detection>) {
-    for (index, site) in policy.patterns.iter().enumerate() {
+    for (index, pattern) in policy.patterns.iter().enumerate() {
         let mut position = 0;
         while position <= text.len() {
-            let Some(captures) = site.regex.captures_at(text, position) else {
+            let Some(captures) = pattern.regex.captures_at(text, position) else {
                 break;
             };
             let Some(value) = captures.get(1) else {

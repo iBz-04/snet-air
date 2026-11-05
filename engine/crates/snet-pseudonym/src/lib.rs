@@ -1,4 +1,4 @@
-//! Personal data replaced with per-task pseudonyms on site before any text
+//! Personal data replaced with per-task pseudonyms on this machine before any text
 //! leaves, and restored in the cloud's answers.
 
 mod detect;

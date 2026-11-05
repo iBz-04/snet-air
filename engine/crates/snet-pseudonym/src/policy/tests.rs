@@ -2,7 +2,7 @@
 
 use crate::errors::PolicyError;
 use crate::policy::Policy;
-use crate::test_support::{ALL_BUILTINS, Site, policy_text};
+use crate::test_support::{ALL_BUILTINS, Fixture, policy_text};
 
 const MARKER_TERM: &str = "Zeynepmarker";
 
@@ -17,8 +17,8 @@ fn assert_holds_no_marker(error: &PolicyError) {
 
 #[test]
 fn a_full_policy_and_empty_arrays_load() {
-    let site = Site::new();
-    let policy = site.policy(&["Ahmet Yılmaz", "Ayşe"], "", "");
+    let fixture = Fixture::new();
+    let policy = fixture.policy(&["Ahmet Yılmaz", "Ayşe"], "", "");
     assert_eq!(policy.dictionary_categories, vec!["PERSON".to_string()]);
     assert_eq!(policy.enabled.len(), 7);
     let empty = format!("dictionaries = []\npatterns = []\npassthrough = []\n{ALL_BUILTINS}");
@@ -105,9 +105,9 @@ fn category_names_are_checked() {
 
 #[test]
 fn dictionary_files_are_checked() {
-    let site = Site::new();
+    let fixture = Fixture::new();
     let load = |bytes: &[u8]| {
-        let path = site.dictionary("terms.txt", bytes);
+        let path = fixture.dictionary("terms.txt", bytes);
         Policy::parse(&policy_text(&path, "", ""))
     };
     let line_error = |bytes: &[u8]| match load(bytes).unwrap_err() {
@@ -162,10 +162,10 @@ fn site_patterns_are_checked_without_their_text_in_errors() {
 
 #[test]
 fn limits_and_passthrough_rules_are_checked() {
-    let site = Site::new();
+    let fixture = Fixture::new();
     let many = (0..17)
         .map(|index| {
-            let path = site.dictionary(&format!("d{index}.txt"), b"Ali\n");
+            let path = fixture.dictionary(&format!("d{index}.txt"), b"Ali\n");
             format!(
                 "[[dictionaries]]\ncategory = \"PERSON\"\npath = \"{}\"\n",
                 path.display()
@@ -199,20 +199,20 @@ fn limits_and_passthrough_rules_are_checked() {
 
 #[test]
 fn the_digest_covers_every_file_and_where_each_line_belongs() {
-    let site = Site::new();
-    let first = site.dictionary("first.txt", b"Ali\nVeli\n");
-    let second = site.dictionary("second.txt", b"Can\n");
+    let fixture = Fixture::new();
+    let first = fixture.dictionary("first.txt", b"Ali\nVeli\n");
+    let second = fixture.dictionary("second.txt", b"Can\n");
     let text = format!(
         "patterns = []\npassthrough = []\n{ALL_BUILTINS}\n[[dictionaries]]\ncategory = \"A\"\npath = \"{}\"\n[[dictionaries]]\ncategory = \"B\"\npath = \"{}\"\n",
         first.display(),
         second.display()
     );
     let before = Policy::parse(&text).unwrap().digest();
-    site.dictionary("first.txt", b"Ali\n");
-    site.dictionary("second.txt", b"Veli\nCan\n");
+    fixture.dictionary("first.txt", b"Ali\n");
+    fixture.dictionary("second.txt", b"Veli\nCan\n");
     let moved = Policy::parse(&text).unwrap().digest();
     assert_ne!(before, moved);
-    site.dictionary("second.txt", b"Veli\nCam\n");
+    fixture.dictionary("second.txt", b"Veli\nCam\n");
     assert_ne!(moved, Policy::parse(&text).unwrap().digest());
 }
 
@@ -223,7 +223,7 @@ fn the_digest_covers_every_file_and_where_each_line_belongs() {
 #[test]
 #[ignore]
 fn the_automaton_at_the_limits_stays_within_its_memory_bound() {
-    let site = Site::new();
+    let fixture = Fixture::new();
     let mut state: u64 = 0x9E37_79B9_7F4A_7C15;
     let mut next = || {
         state ^= state << 13;
@@ -244,7 +244,7 @@ fn the_automaton_at_the_limits_stays_within_its_memory_bound() {
             }
             text.push('\n');
         }
-        let path = site.dictionary(&format!("d{dictionary}.txt"), text.as_bytes());
+        let path = fixture.dictionary(&format!("d{dictionary}.txt"), text.as_bytes());
         tables.push_str(&format!(
             "[[dictionaries]]\ncategory = \"PERSON\"\npath = \"{}\"\n",
             path.display()
@@ -267,8 +267,8 @@ fn the_automaton_at_the_limits_stays_within_its_memory_bound() {
 
 #[test]
 fn a_dictionary_over_16_mib_is_refused() {
-    let site = Site::new();
-    let path = site.dictionary("huge.txt", &vec![b'a'; 16 * 1024 * 1024 + 1]);
+    let fixture = Fixture::new();
+    let path = fixture.dictionary("huge.txt", &vec![b'a'; 16 * 1024 * 1024 + 1]);
     match refused(&policy_text(&path, "", "")) {
         PolicyError::Dictionary { reason, .. } => assert!(reason.contains("16 MiB"), "{reason}"),
         other => panic!("{other}"),

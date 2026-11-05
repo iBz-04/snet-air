@@ -6,19 +6,19 @@ use snet_wire::json::parse_strict;
 use crate::errors::PseudonymError;
 use crate::mapping::TaskMapping;
 use crate::outbound::{Destination, OutboundJson};
-use crate::test_support::{Site, cloud};
+use crate::test_support::{Fixture, cloud};
 
 const PATTERN_SICIL: &str = "[[patterns]]\ncategory = \"SICIL\"\nregex = '\\d{6}(?: \\d{2})?'\n";
 const PASS_EMAIL: &str = "[[passthrough]]\ncategory = \"EMAIL\"\nendpoint_name = \"main\"\nhost = \"api.example.com\"\nlegal_basis = \"Article 28 contract\"\n";
 
 fn pseudonymised(
-    site: &Site,
+    fixture: &Fixture,
     names: &[&str],
     patterns: &str,
     passthrough: &str,
     texts: &[&str],
 ) -> Vec<String> {
-    let policy = site.policy(names, patterns, passthrough);
+    let policy = fixture.policy(names, patterns, passthrough);
     let pseudonymiser = policy.for_destination(cloud());
     let mut mapping = TaskMapping::new();
     texts
@@ -35,9 +35,9 @@ fn pseudonymised(
 
 #[test]
 fn dictionary_terms_match_folded_on_word_boundaries() {
-    let site = Site::new();
+    let fixture = Fixture::new();
     let out = pseudonymised(
-        &site,
+        &fixture,
         &["José", "ışık", "İstanbul", "Ali", "Ali Can"],
         "",
         "",
@@ -56,8 +56,8 @@ fn dictionary_terms_match_folded_on_word_boundaries() {
 
 #[test]
 fn brackets_and_oversized_text_are_refused() {
-    let site = Site::new();
-    let policy = site.policy(&["Ali"], "", "");
+    let fixture = Fixture::new();
+    let policy = fixture.policy(&["Ali"], "", "");
     let pseudonymiser = policy.for_destination(cloud());
     let mut mapping = TaskMapping::new();
     for (text, position) in [("ab⟦c", 2), ("⟧", 0), ("x〚", 1), ("xy〛", 2)] {
@@ -75,9 +75,9 @@ fn brackets_and_oversized_text_are_refused() {
 
 #[test]
 fn overlaps_merge_and_rank() {
-    let site = Site::new();
+    let fixture = Fixture::new();
     let out = pseudonymised(
-        &site,
+        &fixture,
         &["Ali Veli", "Veli Can"],
         "",
         "",
@@ -86,12 +86,12 @@ fn overlaps_merge_and_rank() {
     assert_eq!(out[0], "⟦PERSON_1⟧ geldi");
 
     let pattern_eleven = "[[patterns]]\ncategory = \"SICIL\"\nregex = '\\d{11}'\n";
-    let out = pseudonymised(&site, &["Ali"], pattern_eleven, "", &["no 12345678950"]);
+    let out = pseudonymised(&fixture, &["Ali"], pattern_eleven, "", &["no 12345678950"]);
     assert_eq!(out[0], "no ⟦SICIL_1⟧");
 
     let inside_phone = "[[patterns]]\ncategory = \"PART\"\nregex = '\\d{3} \\d{2}'\n";
     let out = pseudonymised(
-        &site,
+        &fixture,
         &["Ali"],
         inside_phone,
         "",
@@ -99,14 +99,14 @@ fn overlaps_merge_and_rank() {
     );
     assert_eq!(out, vec!["tel ⟦PHONE_1⟧", "tel ⟦PHONE_1⟧"]);
 
-    let out = pseudonymised(&site, &["Ali"], PATTERN_SICIL, "", &["sicil 123456 78b"]);
+    let out = pseudonymised(&fixture, &["Ali"], PATTERN_SICIL, "", &["sicil 123456 78b"]);
     assert_eq!(out[0], "sicil ⟦SICIL_1⟧ 78b");
 }
 
 #[test]
 fn passthrough_keeps_its_category_only_for_its_destination() {
-    let site = Site::new();
-    let policy = site.policy(&["Ahmet"], "", PASS_EMAIL);
+    let fixture = Fixture::new();
+    let policy = fixture.policy(&["Ahmet"], "", PASS_EMAIL);
     let mut mapping = TaskMapping::new();
     let text = "mail ahmet.yilmaz@firma.com.tr";
     let passed = policy
@@ -126,9 +126,9 @@ fn passthrough_keeps_its_category_only_for_its_destination() {
 
 #[test]
 fn equal_values_share_tokens_and_counters_are_per_category() {
-    let site = Site::new();
+    let fixture = Fixture::new();
     let out = pseudonymised(
-        &site,
+        &fixture,
         &["Ahmet", "Veli"],
         "",
         "",
@@ -147,8 +147,8 @@ fn equal_values_share_tokens_and_counters_are_per_category() {
 
 #[test]
 fn the_mapping_limits_hold_and_failures_change_nothing() {
-    let site = Site::new();
-    let policy = site.policy(&["Ali"], "", "");
+    let fixture = Fixture::new();
+    let policy = fixture.policy(&["Ali"], "", "");
     let pseudonymiser = policy.for_destination(cloud());
     let mut mapping = TaskMapping::new();
     pseudonymiser.text(&mut mapping, "Ali").unwrap();
@@ -175,8 +175,8 @@ fn the_mapping_limits_hold_and_failures_change_nothing() {
 
 #[test]
 fn json_values_are_pseudonymised_value_by_value() {
-    let site = Site::new();
-    let policy = site.policy(
+    let fixture = Fixture::new();
+    let policy = fixture.policy(
         &["Ali", "Ayşe"],
         "[[patterns]]\ncategory = \"SICIL\"\nregex = '\\d{7}'\n",
         "",
@@ -232,9 +232,9 @@ fn json_values_are_pseudonymised_value_by_value() {
 
 #[test]
 fn typed_json_and_joins_check_destination_and_policy() {
-    let site = Site::new();
-    let policy = site.policy(&["Ali"], "", "");
-    let other_policy = site.policy(&["Veli"], "", "");
+    let fixture = Fixture::new();
+    let policy = fixture.policy(&["Ali"], "", "");
+    let other_policy = fixture.policy(&["Veli"], "", "");
     let pseudonymiser = policy.for_destination(cloud());
     let mut mapping = TaskMapping::new();
     let answer = pseudonymiser.text(&mut mapping, "Ali geldi").unwrap();
@@ -287,10 +287,10 @@ fn typed_json_and_joins_check_destination_and_policy() {
 
 #[test]
 fn dictionaries_share_categories_and_the_first_wins_a_tie() {
-    let site = Site::new();
-    let staff = site.dictionary("staff.txt", "Jose\u{301}\nAli\n".as_bytes());
-    let people = site.dictionary("people.txt", b"Ali\nVeli\n");
-    let visitors = site.dictionary("visitors.txt", b"Can\n");
+    let fixture = Fixture::new();
+    let staff = fixture.dictionary("staff.txt", "Jose\u{301}\nAli\n".as_bytes());
+    let people = fixture.dictionary("people.txt", b"Ali\nVeli\n");
+    let visitors = fixture.dictionary("visitors.txt", b"Can\n");
     let text = format!(
         "patterns = []\npassthrough = []\n{}\n[[dictionaries]]\ncategory = \"STAFF\"\npath = \"{}\"\n[[dictionaries]]\ncategory = \"PERSON\"\npath = \"{}\"\n[[dictionaries]]\ncategory = \"PERSON\"\npath = \"{}\"\n",
         crate::test_support::ALL_BUILTINS,
@@ -312,8 +312,8 @@ fn dictionaries_share_categories_and_the_first_wins_a_tie() {
 
 #[test]
 fn the_mapping_byte_limit_holds() {
-    let site = Site::new();
-    let policy = site.policy(
+    let fixture = Fixture::new();
+    let policy = fixture.policy(
         &["Ali"],
         "[[patterns]]\ncategory = \"LONG\"\nregex = 'X[a-z]{255}'\n",
         "",
@@ -353,8 +353,8 @@ fn the_mapping_byte_limit_holds() {
 #[test]
 #[ignore]
 fn a_full_size_text_takes_bounded_time() {
-    let site = Site::new();
-    let policy = site.policy(&["Ali Veli", "Zeynep"], PATTERN_SICIL, "");
+    let fixture = Fixture::new();
+    let policy = fixture.policy(&["Ali Veli", "Zeynep"], PATTERN_SICIL, "");
     let pseudonymiser = policy.for_destination(cloud());
     let line = "2026-11-05 07:31:12 line 3 valve 12.5 bar 1730800000000 Zeynep +90 532 123 45 67 part 4711-22 ok\n";
     let text = line.repeat(1024 * 1024 / line.len());

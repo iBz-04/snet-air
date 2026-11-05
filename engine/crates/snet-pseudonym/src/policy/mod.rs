@@ -11,7 +11,7 @@ use crate::detect::{Builtin, Source};
 use crate::errors::PolicyError;
 use crate::outbound::Destination;
 use file::invalid;
-pub(crate) use pattern::SitePattern;
+pub(crate) use pattern::PolicyPattern;
 
 /// The policy used when the user names none: every built-in detector on,
 /// no dictionaries, no patterns and nothing passed through in clear.
@@ -36,14 +36,14 @@ pub struct PassthroughRule {
     pub legal_basis: String,
 }
 
-/// A loaded site policy: which detectors run, the site's dictionaries and
+/// A loaded policy: which detectors run, its dictionaries and
 /// patterns, the passthrough rules and the digest that names them all.
 pub struct Policy {
     pub(crate) enabled: Vec<Builtin>,
     pub(crate) dictionary_categories: Vec<String>,
     pub(crate) automaton: Option<AhoCorasick>,
     pub(crate) term_dictionary: Vec<usize>,
-    pub(crate) patterns: Vec<SitePattern>,
+    pub(crate) patterns: Vec<PolicyPattern>,
     pub(crate) passthrough: Vec<PassthroughRule>,
     pub(crate) digest: [u8; 32],
 }
@@ -86,7 +86,7 @@ impl Policy {
         }
         if parsed.patterns.len() > MAX_PATTERNS {
             return Err(PolicyError::Limit {
-                limit: "64 site patterns",
+                limit: "64 policy patterns",
             });
         }
         if parsed.passthrough.len() > MAX_PASSTHROUGH_RULES {
@@ -103,7 +103,7 @@ impl Policy {
         let mut term_dictionary = Vec::new();
         let mut folded_bytes = 0usize;
         for (position, entry) in parsed.dictionaries.iter().enumerate() {
-            check_site_category(
+            check_policy_category(
                 &entry.category,
                 &format!("dictionaries[{position}].category"),
             )?;
@@ -141,7 +141,7 @@ impl Policy {
 
         let mut patterns = Vec::with_capacity(parsed.patterns.len());
         for (position, entry) in parsed.patterns.iter().enumerate() {
-            check_site_category(&entry.category, &format!("patterns[{position}].category"))?;
+            check_policy_category(&entry.category, &format!("patterns[{position}].category"))?;
             patterns.push(pattern::compile(position, &entry.category, &entry.regex)?);
         }
 
@@ -152,7 +152,9 @@ impl Policy {
                 .iter()
                 .any(|kind| kind.name() == entry.category)
                 || dictionary_categories.contains(&entry.category)
-                || patterns.iter().any(|site| site.category == entry.category);
+                || patterns
+                    .iter()
+                    .any(|pattern| pattern.category == entry.category);
             if !known {
                 return Err(invalid(
                     field("category"),
@@ -254,7 +256,7 @@ pub(crate) fn is_category_name(name: &str) -> bool {
         })
 }
 
-fn check_site_category(name: &str, field: &str) -> Result<(), PolicyError> {
+fn check_policy_category(name: &str, field: &str) -> Result<(), PolicyError> {
     if !is_category_name(name) {
         return Err(invalid(
             field,

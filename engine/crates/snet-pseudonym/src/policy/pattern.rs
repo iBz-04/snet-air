@@ -7,9 +7,9 @@ const MAX_MATCH_BYTES: usize = 256;
 const COMPILED_SIZE_LIMIT: usize = 1024 * 1024;
 const LAZY_DFA_LIMIT: usize = 2 * 1024 * 1024;
 
-/// A site pattern wrapped so its end boundary takes part in choosing the
+/// A policy pattern wrapped so its end boundary takes part in choosing the
 /// match; group 1 is the value.
-pub(crate) struct SitePattern {
+pub(crate) struct PolicyPattern {
     pub(crate) category: String,
     pub(crate) regex: Regex,
 }
@@ -18,7 +18,7 @@ pub(crate) fn compile(
     position: usize,
     category: &str,
     pattern: &str,
-) -> Result<SitePattern, PolicyError> {
+) -> Result<PolicyPattern, PolicyError> {
     let refuse = |reason: &'static str| PolicyError::Pattern {
         position,
         category: category.to_string(),
@@ -44,7 +44,7 @@ pub(crate) fn compile(
         .dfa_size_limit(LAZY_DFA_LIMIT)
         .build()
         .map_err(|_| refuse("it does not compile within the size limits"))?;
-    Ok(SitePattern {
+    Ok(PolicyPattern {
         category: category.to_string(),
         regex,
     })

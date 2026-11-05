@@ -62,7 +62,7 @@ fn json_depth(value: &serde_json::Value) -> u64 {
     }
 }
 
-/// The checks of LOC-4 and LOC-5, run before any connection, and the body of
+/// The request checks, run before any connection, and the body of
 pub(crate) fn build_body(
     config: &LocalConfig,
     request: &LocalRequest,

@@ -7,11 +7,11 @@ use crate::outbound::Destination;
 use crate::policy::Policy;
 
 /// A private directory for dictionary files, removed when dropped.
-pub(crate) struct Site {
+pub(crate) struct Fixture {
     pub(crate) directory: tempfile::TempDir,
 }
 
-impl Site {
+impl Fixture {
     pub(crate) fn new() -> Self {
         let directory = tempfile::tempdir().unwrap();
         std::fs::set_permissions(directory.path(), PermissionsExt::from_mode(0o700)).unwrap();

@@ -5,18 +5,18 @@ use snet_wire::json::parse_strict;
 use crate::errors::PseudonymError;
 use crate::mapping::TaskMapping;
 use crate::policy::Policy;
-use crate::test_support::{Site, cloud};
+use crate::test_support::{Fixture, cloud};
 
 const SICIL: &str = "[[patterns]]\ncategory = \"SICIL\"\nregex = '\\d{3}'\n";
 
-fn setup(site: &Site) -> Policy {
-    site.policy(&["Ali", "Veli"], SICIL, "")
+fn setup(fixture: &Fixture) -> Policy {
+    fixture.policy(&["Ali", "Veli"], SICIL, "")
 }
 
 #[test]
 fn a_round_trip_restores_the_first_surface_forms() {
-    let site = Site::new();
-    let policy = setup(&site);
+    let fixture = Fixture::new();
+    let policy = setup(&fixture);
     let pseudonymiser = policy.for_destination(cloud());
     let mut mapping = TaskMapping::new();
     let sent = pseudonymiser
@@ -48,8 +48,8 @@ fn a_round_trip_restores_the_first_surface_forms() {
 
 #[test]
 fn separators_keep_restored_values_detectable_in_the_next_round() {
-    let site = Site::new();
-    let policy = setup(&site);
+    let fixture = Fixture::new();
+    let policy = setup(&fixture);
     let pseudonymiser = policy.for_destination(cloud());
     let mut mapping = TaskMapping::new();
     pseudonymiser
@@ -88,8 +88,8 @@ fn separators_keep_restored_values_detectable_in_the_next_round() {
 
 #[test]
 fn foreign_malformed_and_stray_tokens_are_refused() {
-    let site = Site::new();
-    let policy = setup(&site);
+    let fixture = Fixture::new();
+    let policy = setup(&fixture);
     let mut mapping = TaskMapping::new();
     policy
         .for_destination(cloud())
@@ -117,8 +117,8 @@ fn foreign_malformed_and_stray_tokens_are_refused() {
 
 #[test]
 fn restored_json_is_serialised_and_colliding_keys_refused() {
-    let site = Site::new();
-    let policy = setup(&site);
+    let fixture = Fixture::new();
+    let policy = setup(&fixture);
     let mut mapping = TaskMapping::new();
     policy
         .for_destination(cloud())
@@ -140,8 +140,8 @@ fn restored_json_is_serialised_and_colliding_keys_refused() {
 
 #[test]
 fn the_spelled_value_check_finds_reshaped_values() {
-    let site = Site::new();
-    let policy = setup(&site);
+    let fixture = Fixture::new();
+    let policy = setup(&fixture);
     let mut mapping = TaskMapping::new();
     policy
         .for_destination(cloud())
