@@ -934,6 +934,21 @@ dependencies = [
 ]
 
 [[package]]
+name = "snet-protocol"
+version = "0.1.0"
+dependencies = [
+ "serde",
+ "serde_json",
+ "sha2",
+ "snet-cloud",
+ "snet-local",
+ "snet-pseudonym",
+ "snet-transcript",
+ "snet-wire",
+ "thiserror",
+]
+
+[[package]]
 name = "snet-pseudonym"
 version = "0.1.0"
 dependencies = [
