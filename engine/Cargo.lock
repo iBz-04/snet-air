@@ -917,6 +917,23 @@ dependencies = [
 ]
 
 [[package]]
+name = "snet-local"
+version = "0.1.0"
+dependencies = [
+ "bytes",
+ "http",
+ "http-body-util",
+ "hyper",
+ "serde",
+ "serde_json",
+ "snet-testkit",
+ "snet-wire",
+ "tempfile",
+ "thiserror",
+ "tokio",
+]
+
+[[package]]
 name = "snet-pseudonym"
 version = "0.1.0"
 dependencies = [
