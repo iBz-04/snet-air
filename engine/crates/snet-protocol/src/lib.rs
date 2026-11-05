@@ -12,9 +12,7 @@ mod schema;
 
 pub use checks::{spells_out_a_value, without_tokens};
 pub use citations::{Citations, Cited, CitedPassage, quote_range};
-pub use documents::{
-    Document, holds_bracket, name_is_valid, question_is_valid,
-};
+pub use documents::{Document, holds_bracket, name_is_valid, question_is_valid};
 pub use errors::{FailureKind, ProtocolError};
 pub use records::{Ending, append, ended, hex, now_milliseconds, refused};
 pub use schema::step_schema;

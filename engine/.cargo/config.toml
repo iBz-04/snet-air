@@ -1,5 +1,5 @@
 # aws-lc-sys links a system AWS-LC when it finds one unless told not to.
-# snet always builds the bundled, pinned sources.
+# Builds inside this repository use the bundled, pinned sources.
 # aws-lc-sys reads the per-target variable before the generic one, so both
 # are forced for every supported target.
 [env]
