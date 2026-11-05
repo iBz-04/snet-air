@@ -1,0 +1,76 @@
+[graph]
+all-features = true
+
+[advisories]
+ignore = []
+
+[licenses]
+allow = [
+    "Apache-2.0",
+    "MIT",
+    "Unicode-3.0",
+    # rustls-webpki and untrusted, the certificate path checker under rustls
+    #.
+    "ISC",
+    # subtle, constant-time comparisons under rustls.
+    "BSD-3-Clause",
+    # webpki-roots, the bundled Mozilla root certificates.
+    "CDLA-Permissive-2.0",
+]
+confidence-threshold = 0.93
+unused-allowed-license = "deny"
+
+[licenses.private]
+ignore = true
+
+[bans]
+multiple-versions = "warn"
+wildcards = "deny"
+allow-wildcard-paths = true
+deny = [
+    # hyper, rustls and tokio-rustls are allowed: hyper's client
+    # connection API has no redirect, proxy or pooling code, and rustls is the
+    # memory-safe TLS stack. Every other client stays banned.
+    { crate = "attohttpc", reason = "HTTP client: no spec has allowed one yet" },
+    { crate = "curl", reason = "HTTP client: no spec has allowed one yet" },
+    { crate = "curl-sys", reason = "HTTP client: no spec has allowed one yet" },
+    { crate = "h2", reason = "HTTP/2 stack: no spec has allowed one yet" },
+    { crate = "hyper-util", reason = "carries a proxy matcher and a pooled client; snet-cloud has its own IO adapter" },
+    { crate = "isahc", reason = "HTTP client: no spec has allowed one yet" },
+    { crate = "reqwest", reason = "HTTP client: no spec has allowed one yet" },
+    { crate = "surf", reason = "HTTP client: no spec has allowed one yet" },
+    { crate = "ureq", reason = "HTTP client: no spec has allowed one yet" },
+    { crate = "hyper-rustls", reason = "TLS transport: no spec has allowed one yet" },
+    # TLS may only ever come from a memory-safe stack.
+    { crate = "hyper-tls", reason = "TLS through native-tls: banned outright" },
+    { crate = "native-tls", reason = "TLS through the platform's C library: banned outright" },
+    { crate = "openssl", reason = "OpenSSL: banned outright" },
+    { crate = "openssl-sys", reason = "OpenSSL: banned outright" },
+    { crate = "tokio-native-tls", reason = "TLS through native-tls: banned outright" },
+    # Models arrive as signed bundles and are never fetched.
+    { crate = "hf-hub", reason = "model downloader: models are never fetched" },
+    # Nothing a model writes may ever run on the machine.
+    { crate = "bashkit", reason = "shell execution: model output must never run code" },
+    { crate = "boa_engine", reason = "JavaScript interpreter: model output must never run code" },
+    { crate = "deno_core", reason = "JavaScript runtime: model output must never run code" },
+    { crate = "mlua", reason = "Lua interpreter: model output must never run code" },
+    { crate = "monty", reason = "Python interpreter: model output must never run code" },
+    { crate = "pyo3", reason = "embedded Python: model output must never run code" },
+    { crate = "pythonize", reason = "embedded Python: model output must never run code" },
+    { crate = "rhai", reason = "script interpreter: model output must never run code" },
+    { crate = "rlua", reason = "Lua interpreter: model output must never run code" },
+    { crate = "rustpython-vm", reason = "Python interpreter: model output must never run code" },
+    { crate = "wasmer", reason = "WebAssembly runtime: model output must never run code" },
+    { crate = "wasmtime", reason = "WebAssembly runtime: model output must never run code" },
+    { crate = "libloading", reason = "runtime loading of native libraries bypasses signature checks" },
+]
+# hyper is allowed as an HTTP/1 client only.
+features = [
+    { crate = "hyper", deny = ["http2", "server", "ffi"] },
+]
+
+[sources]
+unknown-registry = "deny"
+unknown-git = "deny"
+allow-registry = ["https://github.com/rust-lang/crates.io-index"]
+allow-git = []

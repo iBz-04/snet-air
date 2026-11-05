@@ -1,0 +1,30 @@
+[workspace]
+members = ["crates/snet-rules", "crates/snet-testkit", "crates/snet-wire"]
+resolver = "3"
+
+[workspace.package]
+edition = "2024"
+rust-version = "1.98"
+license = "MPL-2.0"
+repository = "https://github.com/iBz-04/snet-air"
+publish = false
+
+[workspace.lints.rust]
+unused_must_use = "deny"
+unsafe_code = "forbid"
+
+[workspace.lints.clippy]
+dbg_macro = "deny"
+let_underscore_future = "deny"
+unchecked_time_subtraction = "deny"
+collapsible_if = "deny"
+clone_on_copy = "deny"
+redundant_closure = "deny"
+ptr_arg = "deny"
+len_zero = "deny"
+let_unit_value = "deny"
+unnecessary_lazy_evaluations = "deny"
+needless_range_loop = "deny"
+manual_clamp = "deny"
+unwrap_used = "deny"
+expect_used = "deny"

@@ -1,0 +1,22 @@
+[package]
+name = "snet-rules"
+version = "0.1.0"
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+publish.workspace = true
+description = "Checks the repository against the rules that rustc, clippy and cargo-deny cannot see: file length, listed words and crate manifests"
+
+[dependencies]
+proc-macro2 = { version = "1.0.107", features = ["span-locations"] }
+sha2 = "0.11.1"
+syn = { version = "3.0.9", default-features = false, features = ["full", "parsing", "printing", "visit"] }
+thiserror = "2.0.21"
+toml = "1.2.0"
+
+[dev-dependencies]
+tempfile = "3.27.0"
+
+[lints]
+workspace = true
