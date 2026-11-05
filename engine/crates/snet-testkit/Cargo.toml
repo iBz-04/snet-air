@@ -6,7 +6,7 @@ rust-version.workspace = true
 license.workspace = true
 repository.workspace = true
 publish.workspace = true
-description = "Real TLS and Unix-socket servers and a test certificate authority, shared by the engine's tests only"
+description = "Real TLS and loopback HTTP servers and a test certificate authority, shared by the engine's tests only"
 
 [dependencies]
 rcgen = { version = "0.14.10", default-features = false, features = ["aws_lc_rs", "pem"] }

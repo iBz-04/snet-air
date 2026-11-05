@@ -1,26 +1,25 @@
-use std::os::unix::fs::PermissionsExt;
-use std::path::PathBuf;
+use std::net::SocketAddr;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
 use tokio::io::AsyncWriteExt;
-use tokio::net::UnixListener;
+use tokio::net::TcpListener;
 
 use crate::SetupError;
 use crate::http::{ReceivedRequest, read_request};
 
-/// How the Unix-socket server answers one request.
-pub enum UnixReply {
+/// How the loopback server answers one request.
+pub enum LoopbackReply {
     Bytes(Vec<u8>),
     After(Duration, Vec<u8>),
     Stall,
 }
 
-pub type UnixHandler = Arc<dyn Fn(&ReceivedRequest) -> UnixReply + Send + Sync>;
+pub type LoopbackHandler = Arc<dyn Fn(&ReceivedRequest) -> LoopbackReply + Send + Sync>;
 
 #[derive(Default)]
-pub struct UnixObservations {
+pub struct LoopbackObservations {
     pub connections: AtomicUsize,
     pub bytes_received: AtomicUsize,
     pub in_flight: AtomicUsize,
@@ -28,7 +27,7 @@ pub struct UnixObservations {
     pub requests: Mutex<Vec<ReceivedRequest>>,
 }
 
-impl UnixObservations {
+impl LoopbackObservations {
     pub fn connections(&self) -> usize {
         self.connections.load(Ordering::SeqCst)
     }
@@ -41,21 +40,18 @@ impl UnixObservations {
     }
 }
 
-/// An HTTP/1.1 server on a Unix socket in a private directory, run by the
-/// test under its own account, one request per connection.
-pub struct UnixServer {
-    _directory: tempfile::TempDir,
-    pub socket: PathBuf,
-    pub observations: Arc<UnixObservations>,
+/// A plain HTTP/1.1 server on 127.0.0.1 at a free port, one request per
+/// connection, standing in for a local model server.
+pub struct LoopbackServer {
+    pub address: SocketAddr,
+    pub observations: Arc<LoopbackObservations>,
 }
 
-impl UnixServer {
-    pub async fn start(handler: UnixHandler) -> Result<Self, SetupError> {
-        let directory = tempfile::tempdir()?;
-        std::fs::set_permissions(directory.path(), PermissionsExt::from_mode(0o700))?;
-        let socket = directory.path().join("a.sock");
-        let listener = UnixListener::bind(&socket)?;
-        let observations = Arc::new(UnixObservations::default());
+impl LoopbackServer {
+    pub async fn start(handler: LoopbackHandler) -> Result<Self, SetupError> {
+        let listener = TcpListener::bind("127.0.0.1:0").await?;
+        let address = listener.local_addr()?;
+        let observations = Arc::new(LoopbackObservations::default());
         let shared = Arc::clone(&observations);
         tokio::spawn(async move {
             while let Ok((mut stream, _)) = listener.accept().await {
@@ -76,12 +72,12 @@ impl UnixServer {
                         .unwrap_or_else(|poisoned| poisoned.into_inner())
                         .push(request.clone());
                     let bytes = match handler(&request) {
-                        UnixReply::Bytes(bytes) => bytes,
-                        UnixReply::After(delay, bytes) => {
+                        LoopbackReply::Bytes(bytes) => bytes,
+                        LoopbackReply::After(delay, bytes) => {
                             tokio::time::sleep(delay).await;
                             bytes
                         }
-                        UnixReply::Stall => {
+                        LoopbackReply::Stall => {
                             std::future::pending::<()>().await;
                             Vec::new()
                         }
@@ -92,8 +88,7 @@ impl UnixServer {
             }
         });
         Ok(Self {
-            _directory: directory,
-            socket,
+            address,
             observations,
         })
     }
