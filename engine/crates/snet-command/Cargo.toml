@@ -1,0 +1,38 @@
+[package]
+name = "snet-command"
+version = "0.1.0"
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+publish.workspace = true
+description = "The snet command: ask a question about local files with a local and a cloud model"
+
+[[bin]]
+name = "snet"
+path = "src/main.rs"
+
+[dependencies]
+aws-lc-rs = "1.19.0"
+snet-cloud = { path = "../snet-cloud" }
+snet-converse = { path = "../snet-converse" }
+snet-fanout = { path = "../snet-fanout" }
+snet-local = { path = "../snet-local" }
+snet-protocol = { path = "../snet-protocol" }
+snet-pseudonym = { path = "../snet-pseudonym" }
+snet-transcript = { path = "../snet-transcript" }
+thiserror = "2.0.21"
+tokio = { version = "1.54.1", features = ["rt-multi-thread", "time"] }
+
+# The core-dump limit and, on Linux, the dumpable flag.
+[target.'cfg(unix)'.dependencies]
+rustix = { version = "1.1.6", default-features = false, features = ["process", "std"] }
+
+[dev-dependencies]
+serde_json = "1.0.154"
+snet-testkit = { path = "../snet-testkit" }
+tempfile = "3.27.0"
+tokio = { version = "1.54.1", features = ["macros", "rt-multi-thread"] }
+
+[lints]
+workspace = true

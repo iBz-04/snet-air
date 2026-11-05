@@ -941,6 +941,26 @@ dependencies = [
 ]
 
 [[package]]
+name = "snet-command"
+version = "0.1.0"
+dependencies = [
+ "aws-lc-rs",
+ "rustix",
+ "serde_json",
+ "snet-cloud",
+ "snet-converse",
+ "snet-fanout",
+ "snet-local",
+ "snet-protocol",
+ "snet-pseudonym",
+ "snet-testkit",
+ "snet-transcript",
+ "tempfile",
+ "thiserror",
+ "tokio",
+]
+
+[[package]]
 name = "snet-converse"
 version = "0.1.0"
 dependencies = [

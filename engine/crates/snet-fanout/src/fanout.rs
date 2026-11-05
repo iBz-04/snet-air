@@ -40,7 +40,7 @@ pub struct FanOutAnswer {
     pub task_end_line: u64,
 }
 
-/// Runs fan-out tasks over one cloud endpoint, one local model, one site
+/// Runs fan-out tasks over one cloud endpoint, one local model, one
 /// policy and one transcript.
 pub struct FanOut<'a> {
     pub cloud: &'a CloudClient<Transcript>,
