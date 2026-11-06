@@ -88,6 +88,13 @@ async fn run_prepared(
         files,
         endpoint,
     } = prepared;
+    let local = LocalModel::new(settings.local);
+    // Before anything goes to the cloud: Ollama answers and has the model,
+    // or the GGUF file is loaded.
+    local
+        .prepare()
+        .await
+        .map_err(|error| CommandError::configuration(format!("the local model: {error}")))?;
     let task_id = new_task_id()?;
     let transcript = Transcript::create(&settings.home, &task_id)
         .map_err(|error| CommandError::failed(format!("the transcript: {error}")))?;
@@ -98,7 +105,6 @@ async fn run_prepared(
         CloudSwitch::new(true),
     )
     .map_err(|error| CommandError::configuration(error.to_string()))?;
-    let local = LocalModel::new(settings.local);
     let budget = cloud.config().task_limits();
 
     let ended = if settings.fanout {

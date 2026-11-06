@@ -3,14 +3,23 @@ use std::net::{IpAddr, Ipv6Addr, SocketAddr};
 use super::*;
 
 fn address(host: &str) -> Result<SocketAddr, ConfigError> {
-    LocalConfig::ollama("qwen3:4b", Some(host)).map(|config| config.address())
+    LocalConfig::ollama("qwen3:4b", Some(host)).map(|config| match config.backend() {
+        Backend::Ollama { address } => *address,
+        #[cfg(feature = "gguf")]
+        Backend::Gguf { .. } => panic!("an Ollama configuration"),
+    })
 }
 
 #[test]
 fn the_default_is_ollamas_own_address() {
     let config = LocalConfig::ollama("qwen3:4b", None).unwrap();
-    assert_eq!(config.address(), DEFAULT_OLLAMA_ADDRESS);
-    assert_eq!(config.address().to_string(), "127.0.0.1:11434");
+    assert_eq!(
+        config.backend(),
+        &Backend::Ollama {
+            address: DEFAULT_OLLAMA_ADDRESS
+        }
+    );
+    assert_eq!(DEFAULT_OLLAMA_ADDRESS.to_string(), "127.0.0.1:11434");
     assert_eq!(config.model(), "qwen3:4b");
 }
 
@@ -101,4 +110,36 @@ fn bounds_can_be_changed_within_their_ranges() {
     ] {
         assert!(config.clone().with_bounds(bounds).is_err(), "{bounds:?}");
     }
+}
+
+#[cfg(feature = "gguf")]
+#[test]
+fn a_gguf_path_must_be_an_existing_gguf_file_and_becomes_absolute() {
+    let directory = tempfile::tempdir().unwrap();
+    let file = directory.path().join("Small-Model.GGUF");
+    std::fs::write(&file, b"GGUF").unwrap();
+    let config = LocalConfig::gguf(&file).unwrap();
+    match config.backend() {
+        Backend::Gguf { path } => assert!(path.is_absolute()),
+        Backend::Ollama { .. } => panic!("a GGUF configuration"),
+    }
+    assert_eq!(config.model(), "Small-Model.GGUF");
+    assert_eq!(config.max_concurrent_requests(), 1);
+
+    let other = directory.path().join("model.bin");
+    std::fs::write(&other, b"GGUF").unwrap();
+    for refused in [
+        other,
+        directory.path().join("missing.gguf"),
+        directory.path().to_path_buf(),
+    ] {
+        assert!(
+            LocalConfig::gguf(&refused).is_err(),
+            "{}",
+            refused.display()
+        );
+    }
+    let folder = directory.path().join("folder.gguf");
+    std::fs::create_dir(&folder).unwrap();
+    assert!(LocalConfig::gguf(&folder).is_err());
 }

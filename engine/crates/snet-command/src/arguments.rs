@@ -13,7 +13,8 @@ options:
   --cloud <provider:model>  anthropic:<model>, openai:<model> or openai-compatible:<model>
                             (default: $SNET_CLOUD, else anthropic:claude-sonnet-5-5)
   --cloud-url <url>         the https URL of an openai-compatible server ($SNET_CLOUD_URL)
-  --local <ollama:model>    the local model (default: $SNET_LOCAL, else ollama:qwen3:4b)
+  --local <ollama:model>    the local model (default: $SNET_LOCAL, else ollama:qwen3:4b),
+          or <gguf:file>    or a GGUF file run in this process (builds with --features gguf)
   --context <tokens>        the local model's context window (default 8192)
   --effort <level>          how hard the cloud model thinks (default low)
   --rounds <n>              conversation rounds, 2 to 8 (default 4)

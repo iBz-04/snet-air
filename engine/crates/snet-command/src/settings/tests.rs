@@ -1,5 +1,7 @@
 use std::path::PathBuf;
 
+use snet_local::Backend;
+
 use super::*;
 use crate::exit::Exit;
 use crate::test_support::FixedEnvironment;
@@ -32,7 +34,12 @@ fn one_key_is_enough_and_everything_else_has_a_default() {
     assert_eq!(settings.cloud.base_url, None);
     assert_eq!(settings.cloud.task_limits, TASK_LIMITS);
     assert_eq!(settings.local.model(), "qwen3:4b");
-    assert_eq!(settings.local.address().to_string(), "127.0.0.1:11434");
+    assert_eq!(
+        settings.local.backend(),
+        &Backend::Ollama {
+            address: "127.0.0.1:11434".parse().unwrap()
+        }
+    );
     assert_eq!(settings.local.bounds().context_tokens, 8_192);
     assert_eq!(settings.home, PathBuf::from("/home/someone/.snet"));
     assert_eq!(settings.conversation.rounds, 4);
@@ -84,7 +91,12 @@ fn the_environment_chooses_models_hosts_and_home_when_flags_do_not() {
     );
     assert_eq!(settings.cloud.effort, "model_default");
     assert_eq!(settings.local.model(), "llama3.2:3b");
-    assert_eq!(settings.local.address().to_string(), "127.0.0.1:9999");
+    assert_eq!(
+        settings.local.backend(),
+        &Backend::Ollama {
+            address: "127.0.0.1:9999".parse().unwrap()
+        }
+    );
     assert_eq!(settings.home, PathBuf::from("/data/snet"));
 }
 
@@ -137,7 +149,7 @@ fn malformed_choices_are_refused() {
                 local: Some("llama3".to_string()),
                 ..arguments()
             },
-            "must be ollama:<model>",
+            "must be ollama:<model> or gguf:<file>",
         ),
         (
             AskArguments {
@@ -176,4 +188,41 @@ fn malformed_choices_are_refused() {
         ..FixedEnvironment::new(&[("ANTHROPIC_API_KEY", "sk-1")])
     };
     assert!(error(&arguments(), &homeless).message.contains("SNET_HOME"));
+}
+
+#[cfg(not(feature = "gguf"))]
+#[test]
+fn a_gguf_model_names_the_feature_to_build_with() {
+    let gguf = AskArguments {
+        local: Some("gguf:/models/small.gguf".to_string()),
+        ..arguments()
+    };
+    let refused = error(&gguf, &environment(&[("ANTHROPIC_API_KEY", "sk-1")]));
+    assert_eq!(refused.exit, Exit::Usage);
+    assert!(
+        refused.message.contains("--features gguf"),
+        "{}",
+        refused.message
+    );
+}
+
+#[cfg(feature = "gguf")]
+#[test]
+fn a_gguf_model_is_a_file_checked_before_anything_runs() {
+    let directory = tempfile::tempdir().unwrap();
+    let file = directory.path().join("small.gguf");
+    std::fs::write(&file, b"GGUF").unwrap();
+    let gguf = AskArguments {
+        local: Some(format!("gguf:{}", file.display())),
+        ..arguments()
+    };
+    let key = environment(&[("ANTHROPIC_API_KEY", "sk-1")]);
+    let settings = resolve(&gguf, &key).unwrap();
+    assert!(matches!(settings.local.backend(), Backend::Gguf { .. }));
+    assert_eq!(settings.local.max_concurrent_requests(), 1);
+    let missing = AskArguments {
+        local: Some("gguf:/no/such/model.gguf".to_string()),
+        ..arguments()
+    };
+    assert_eq!(error(&missing, &key).exit, Exit::Configuration);
 }

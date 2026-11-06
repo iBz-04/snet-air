@@ -8,6 +8,10 @@ repository.workspace = true
 publish.workspace = true
 description = "The snet command: ask a question about local files with a local and a cloud model"
 
+[features]
+# Adds `--local gguf:<path>`: a GGUF file run in this process by quaynor.
+gguf = ["snet-local/gguf"]
+
 [[bin]]
 name = "snet"
 path = "src/main.rs"

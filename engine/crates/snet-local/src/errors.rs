@@ -43,6 +43,10 @@ pub enum LocalError {
     Truncated,
     #[error("the reply is malformed: {reason}")]
     MalformedReply { reason: String },
+    #[error("the model file `{path}` did not load: {cause}")]
+    ModelLoad { path: String, cause: String },
+    #[error("the in-process model failed: {cause}")]
+    Engine { cause: String },
     #[error("the answer breaks the reply schema at {path}: {reason}")]
     ReplyBreaksSchema { path: String, reason: String },
 }

@@ -16,6 +16,13 @@ allow = [
     "BSD-3-Clause",
     # webpki-roots, the bundled Mozilla root certificates.
     "CDLA-Permissive-2.0",
+    # The GGUF backend: borrow-or-share under jsonschema's URI parser.
+    "MIT-0",
+    # The GGUF backend: foldhash, the hasher under jsonschema's maps.
+    "Zlib",
+    # The GGUF backend: option-ext under quaynor's directory lookup; the
+    # same licence as this project.
+    "MPL-2.0",
 ]
 confidence-threshold = 0.93
 unused-allowed-license = "deny"
@@ -62,7 +69,9 @@ deny = [
     { crate = "rustpython-vm", reason = "Python interpreter: model output must never run code" },
     { crate = "wasmer", reason = "WebAssembly runtime: model output must never run code" },
     { crate = "wasmtime", reason = "WebAssembly runtime: model output must never run code" },
-    { crate = "libloading", reason = "runtime loading of native libraries bypasses signature checks" },
+    # clang-sys may use it inside bindgen while llama.cpp's bindings are
+    # generated at build time; nothing in the built program loads libraries.
+    { crate = "libloading", wrappers = ["clang-sys"], reason = "runtime loading of native libraries bypasses signature checks" },
 ]
 # hyper is allowed as an HTTP/1 client only.
 features = [
@@ -73,4 +82,6 @@ features = [
 unknown-registry = "deny"
 unknown-git = "deny"
 allow-registry = ["https://github.com/rust-lang/crates.io-index"]
-allow-git = []
+# The GGUF backend's engine at a pinned commit, until its release with
+# optional tools and downloads is on crates.io.
+allow-git = ["https://github.com/iBz-04/quaynor"]

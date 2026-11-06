@@ -40,8 +40,15 @@ fn endpoint_text(port: u16) -> String {
     )
 }
 
+/// What the scripted Ollama does with chat requests.
+enum Ollama {
+    Answers(Value),
+    FailsEveryChat,
+    Down,
+}
+
 struct Run {
-    exit: Exit,
+    exit: Result<Exit, CommandError>,
     output: String,
     errors: String,
     cloud_bodies: Vec<String>,
@@ -49,7 +56,7 @@ struct Run {
 }
 
 /// Runs one conversation task against a scripted cloud and Ollama.
-async fn run(cloud_script: Vec<Value>, ollama: Option<Value>) -> Run {
+async fn run(cloud_script: Vec<Value>, ollama: Ollama) -> Run {
     let pki = TestPki::new().unwrap();
     let replies: Arc<Vec<Vec<u8>>> = Arc::new(cloud_script.into_iter().map(cloud_reply).collect());
     let behaviour = Behaviour::Handle(Arc::new(move |index, _request| {
@@ -66,9 +73,8 @@ async fn run(cloud_script: Vec<Value>, ollama: Option<Value>) -> Run {
     let cloud = TestServer::start(identity, TlsVersion::Tls13, behaviour)
         .await
         .unwrap();
-    // Without a scripted answer Ollama is not running: its port is closed.
     let (_ollama_server, ollama_host) = match ollama {
-        Some(answer) => {
+        Ollama::Answers(_) | Ollama::FailsEveryChat => {
             let handler: LoopbackHandler = Arc::new(move |request| {
                 if request.request_line.starts_with("GET /api/tags") {
                     let body = json!({"models": [{"name": "qwen3:4b", "model": "qwen3:4b", "digest": DIGEST, "size": 1}]});
@@ -78,13 +84,20 @@ async fn run(cloud_script: Vec<Value>, ollama: Option<Value>) -> Run {
                         body.to_string().as_bytes(),
                     ));
                 }
-                LoopbackReply::Bytes(ollama_reply(answer.clone()))
+                match &ollama {
+                    Ollama::Answers(answer) => LoopbackReply::Bytes(ollama_reply(answer.clone())),
+                    _ => LoopbackReply::Bytes(http_response(
+                        500,
+                        &[("content-type", "application/json")],
+                        br#"{"error":"model runner stopped"}"#,
+                    )),
+                }
             });
             let server = LoopbackServer::start(handler).await.unwrap();
             let host = server.address.to_string();
             (Some(server), host)
         }
-        None => {
+        Ollama::Down => {
             let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
             let host = listener.local_addr().unwrap().to_string();
             drop(listener);
@@ -122,14 +135,12 @@ async fn run(cloud_script: Vec<Value>, ollama: Option<Value>) -> Run {
     };
     let mut output = Vec::new();
     let mut errors = Vec::new();
-    let exit = run_prepared(prepared, &mut output, &mut errors)
-        .await
-        .unwrap();
-    let transcripts: Vec<_> = std::fs::read_dir(home.path().join("transcripts"))
-        .unwrap()
-        .map(|entry| entry.unwrap().path())
-        .collect();
-    assert_eq!(transcripts.len(), 1);
+    let exit = run_prepared(prepared, &mut output, &mut errors).await;
+    let transcripts: Vec<_> = match std::fs::read_dir(home.path().join("transcripts")) {
+        Ok(entries) => entries.map(|entry| entry.unwrap().path()).collect(),
+        Err(_) => Vec::new(),
+    };
+    assert!(transcripts.len() <= 1);
     Run {
         exit,
         output: String::from_utf8(output).unwrap(),
@@ -140,11 +151,16 @@ async fn run(cloud_script: Vec<Value>, ollama: Option<Value>) -> Run {
             .into_iter()
             .map(|request| String::from_utf8(request.body).unwrap())
             .collect(),
-        transcript: std::fs::read_to_string(&transcripts[0])
-            .unwrap()
-            .lines()
-            .map(|line| serde_json::from_str(line).unwrap())
-            .collect(),
+        transcript: transcripts
+            .first()
+            .map(|path| {
+                std::fs::read_to_string(path)
+                    .unwrap()
+                    .lines()
+                    .map(|line| serde_json::from_str(line).unwrap())
+                    .collect()
+            })
+            .unwrap_or_default(),
     }
 }
 
@@ -155,10 +171,10 @@ async fn an_answer_is_printed_with_its_passages_and_its_spending() {
             json!({"step": "ask", "text": "Which seal was replaced and who reported the leak?", "citations": []}),
             json!({"step": "answer", "text": "The inner seal; the leak was reported by the person named in the log.", "citations": ["C1"]}),
         ],
-        Some(json!({"answer": "The inner seal was replaced.", "quotes": [{"document": "D1", "text": QUOTE}]})),
+        Ollama::Answers(json!({"answer": "The inner seal was replaced.", "quotes": [{"document": "D1", "text": QUOTE}]})),
     )
     .await;
-    assert_eq!(result.exit, Exit::Success);
+    assert_eq!(result.exit, Ok(Exit::Success));
     assert!(
         result.output.starts_with("The inner seal;"),
         "{}",
@@ -220,14 +236,32 @@ async fn an_answer_is_printed_with_its_passages_and_its_spending() {
 async fn a_task_that_fails_says_why_and_where_its_transcript_is() {
     let result = run(
         vec![json!({"step": "ask", "text": "Which seal was replaced?", "citations": []})],
-        None,
+        Ollama::FailsEveryChat,
     )
     .await;
-    assert_eq!(result.exit, Exit::NoAnswer);
+    assert_eq!(result.exit, Ok(Exit::NoAnswer));
     assert!(result.output.is_empty(), "{}", result.output);
-    assert!(result.errors.contains("ollama serve"), "{}", result.errors);
+    assert!(
+        result.errors.contains("model runner stopped"),
+        "{}",
+        result.errors
+    );
     assert!(result.errors.contains("transcript: "), "{}", result.errors);
     let ended = result.transcript.last().unwrap();
     assert_eq!(ended["kind"], "task_ended");
     assert_eq!(ended["error_kind"], "local");
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn a_stopped_ollama_is_reported_before_anything_is_sent() {
+    let result = run(
+        vec![json!({"step": "ask", "text": "Which seal was replaced?", "citations": []})],
+        Ollama::Down,
+    )
+    .await;
+    let error = result.exit.unwrap_err();
+    assert_eq!(error.exit, Exit::Configuration);
+    assert!(error.message.contains("ollama serve"), "{}", error.message);
+    assert!(result.cloud_bodies.is_empty());
+    assert!(result.transcript.is_empty());
 }

@@ -12,6 +12,7 @@ use crate::exit::CommandError;
 pub const DEFAULT_CLOUD: &str = "anthropic:claude-sonnet-5-5";
 pub const DEFAULT_LOCAL: &str = "ollama:qwen3:4b";
 const OLLAMA_PREFIX: &str = "ollama:";
+const GGUF_PREFIX: &str = "gguf:";
 const DEFAULT_CONTEXT_TOKENS: u64 = 8_192;
 const DEFAULT_ROUNDS: u32 = 4;
 const DEFAULT_PLAN_ROUNDS: u32 = 2;
@@ -97,14 +98,22 @@ pub fn resolve(
             .variable("SNET_LOCAL")?
             .unwrap_or_else(|| DEFAULT_LOCAL.to_string()),
     };
-    let local_model = local_text.strip_prefix(OLLAMA_PREFIX).ok_or_else(|| {
-        CommandError::usage(format!(
-            "the local model `{local_text}` must be ollama:<model>, such as {DEFAULT_LOCAL}"
-        ))
-    })?;
-    let ollama_host = environment.variable("OLLAMA_HOST")?;
-    let local = LocalConfig::ollama(local_model, ollama_host.as_deref())
-        .map_err(|error| CommandError::configuration(error.to_string()))?;
+    let local = match (
+        local_text.strip_prefix(OLLAMA_PREFIX),
+        local_text.strip_prefix(GGUF_PREFIX),
+    ) {
+        (Some(model), _) => {
+            let ollama_host = environment.variable("OLLAMA_HOST")?;
+            LocalConfig::ollama(model, ollama_host.as_deref())
+                .map_err(|error| CommandError::configuration(error.to_string()))?
+        }
+        (None, Some(path)) => gguf_config(path)?,
+        (None, None) => {
+            return Err(CommandError::usage(format!(
+                "the local model `{local_text}` must be ollama:<model> or gguf:<file>, such as {DEFAULT_LOCAL}"
+            )));
+        }
+    };
     let bounds = LocalBounds {
         context_tokens: arguments.context.unwrap_or(DEFAULT_CONTEXT_TOKENS),
         max_output_tokens: LOCAL_OUTPUT_TOKENS,
@@ -153,6 +162,19 @@ pub fn resolve(
             local_requests: 512,
         },
     })
+}
+
+#[cfg(feature = "gguf")]
+fn gguf_config(path: &str) -> Result<LocalConfig, CommandError> {
+    LocalConfig::gguf(std::path::Path::new(path))
+        .map_err(|error| CommandError::configuration(error.to_string()))
+}
+
+#[cfg(not(feature = "gguf"))]
+fn gguf_config(_path: &str) -> Result<LocalConfig, CommandError> {
+    Err(CommandError::usage(
+        "this snet was built without GGUF support; install it with `--features gguf`",
+    ))
 }
 
 #[cfg(test)]

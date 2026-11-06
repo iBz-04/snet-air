@@ -1,4 +1,6 @@
 use std::net::{IpAddr, Ipv4Addr, SocketAddr};
+#[cfg(feature = "gguf")]
+use std::path::{Path, PathBuf};
 
 use crate::errors::ConfigError;
 
@@ -50,10 +52,20 @@ fn within(field: &'static str, value: u64, minimum: u64, maximum: u64) -> Result
     Ok(value)
 }
 
+/// What runs the local model.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum Backend {
+    /// An Ollama server on this machine.
+    Ollama { address: SocketAddr },
+    /// A GGUF file run inside this process by quaynor.
+    #[cfg(feature = "gguf")]
+    Gguf { path: PathBuf },
+}
+
 /// The local model and the bounds every request to it keeps.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct LocalConfig {
-    pub(crate) address: SocketAddr,
+    pub(crate) backend: Backend,
     pub(crate) model: String,
     pub(crate) context_tokens: u64,
     pub(crate) max_output_tokens: u64,
@@ -93,7 +105,7 @@ impl LocalConfig {
             Some(text) => loopback_address(text)?,
         };
         Ok(Self {
-            address,
+            backend: Backend::Ollama { address },
             model: model.to_string(),
             context_tokens: 8_192,
             max_output_tokens: 1_024,
@@ -137,8 +149,56 @@ impl LocalConfig {
         }
     }
 
-    pub fn address(&self) -> SocketAddr {
-        self.address
+    /// A GGUF file on this machine, run in-process. The path is made
+    /// absolute so it can never be read as a remote model address.
+    #[cfg(feature = "gguf")]
+    pub fn gguf(path: &Path) -> Result<Self, ConfigError> {
+        let field = "gguf";
+        let has_extension = path
+            .extension()
+            .is_some_and(|extension| extension.eq_ignore_ascii_case("gguf"));
+        if !has_extension {
+            return Err(invalid(
+                field,
+                format!("`{}` does not end in .gguf", path.display()),
+            ));
+        }
+        let absolute = std::fs::canonicalize(path)
+            .map_err(|error| invalid(field, format!("`{}`: {error}", path.display())))?;
+        let metadata = std::fs::metadata(&absolute)
+            .map_err(|error| invalid(field, format!("`{}`: {error}", path.display())))?;
+        if !metadata.is_file() {
+            return Err(invalid(
+                field,
+                format!("`{}` is not a file", path.display()),
+            ));
+        }
+        let model = absolute
+            .file_name()
+            .and_then(|name| name.to_str())
+            .ok_or_else(|| invalid(field, "the file name is not UTF-8"))?
+            .to_string();
+        Ok(Self {
+            backend: Backend::Gguf { path: absolute },
+            model,
+            context_tokens: 8_192,
+            max_output_tokens: 1_024,
+            request_bytes_cap: 1_048_576,
+            reply_bytes_cap: 1_048_576,
+            max_schema_depth: 16,
+            max_schema_bytes: 65_536,
+            total_timeout_seconds: 600,
+            // The engine runs one chat worker, so requests take turns.
+            max_concurrent_requests: 1,
+            control_tokens: CONTROL_TOKENS
+                .iter()
+                .map(|token| token.to_string())
+                .collect(),
+        })
+    }
+
+    pub fn backend(&self) -> &Backend {
+        &self.backend
     }
 
     pub fn model(&self) -> &str {
