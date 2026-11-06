@@ -32,9 +32,17 @@ export ANTHROPIC_API_KEY=sk-ant-...
 snet ask "Who signed the contract?" contract.txt
 ```
 
-Other clouds: `--cloud melious:<model>` with `MELIOUS_API_KEY`, `--cloud openai:<model>` with `OPENAI_API_KEY`, or any OpenAI-compatible server with `--cloud openai-compatible:<model> --cloud-url <url>`.
+| Cloud | Flag | Key |
+|---|---|---|
+| Anthropic (default) | `--cloud anthropic:<model>` | `ANTHROPIC_API_KEY` |
+| Melious | `--cloud melious:<model>` | `MELIOUS_API_KEY` |
+| OpenAI | `--cloud openai:<model>` | `OPENAI_API_KEY` |
+| Any OpenAI-compatible server | `--cloud openai-compatible:<model> --cloud-url <url>` | `SNET_CLOUD_API_KEY` |
 
-Use `--fanout` for large files. Run `snet ask --help` for all options.
+| Option | Use |
+|---|---|
+| `--fanout` | Large files |
+| `--help` | All options |
 
 ## Privacy
 
