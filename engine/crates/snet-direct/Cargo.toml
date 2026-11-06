@@ -1,0 +1,27 @@
+[package]
+name = "snet-direct"
+version = "0.1.0"
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+publish.workspace = true
+description = "The direct protocol: a question with no local material, answered by the cloud model alone"
+
+[dependencies]
+sha2 = "0.11.1"
+snet-cloud = { path = "../snet-cloud" }
+snet-protocol = { path = "../snet-protocol" }
+snet-pseudonym = { path = "../snet-pseudonym" }
+snet-transcript = { path = "../snet-transcript" }
+tokio = { version = "1.54.1", features = ["rt", "time"] }
+
+[dev-dependencies]
+serde_json = "1.0.154"
+snet-protocol = { path = "../snet-protocol" }
+snet-testkit = { path = "../snet-testkit" }
+tempfile = "3.27.0"
+tokio = { version = "1.54.1", features = ["macros", "rt-multi-thread"] }
+
+[lints]
+workspace = true

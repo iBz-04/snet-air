@@ -1944,6 +1944,7 @@ dependencies = [
  "serde_json",
  "snet-cloud",
  "snet-converse",
+ "snet-direct",
  "snet-fanout",
  "snet-local",
  "snet-protocol",
@@ -1971,6 +1972,21 @@ dependencies = [
  "snet-wire",
  "tempfile",
  "thiserror",
+ "tokio",
+]
+
+[[package]]
+name = "snet-direct"
+version = "0.1.0"
+dependencies = [
+ "serde_json",
+ "sha2",
+ "snet-cloud",
+ "snet-protocol",
+ "snet-pseudonym",
+ "snet-testkit",
+ "snet-transcript",
+ "tempfile",
  "tokio",
 ]
 
