@@ -134,6 +134,35 @@ pub(crate) fn check_request(
     )
 }
 
+/// Units a number may carry and still be a measurement or duration, not a
+/// detail about someone.
+const UNITS: [&str; 24] = [
+    "year", "month", "week", "day", "hour", "minute", "second", "percent", "%", "mg", "g", "kg",
+    "lb", "ml", "l", "km", "m", "cm", "mm", "mile", "dl", "mmol", "bar", "x",
+];
+
+/// A number with a unit, such as `3-year`, `190 mg/dL`, `60%` or `2 weeks`,
+/// which the local model sometimes lists as private although it names no
+/// one.
+fn is_measurement(term: &str) -> bool {
+    let lowered = term.to_lowercase();
+    let unit_start = lowered
+        .find(|character: char| {
+            !(character.is_ascii_digit() || character == '.' || character == ',')
+        })
+        .unwrap_or(lowered.len());
+    if unit_start == 0 {
+        return false;
+    }
+    let unit = lowered[unit_start..]
+        .trim_start_matches([' ', '-'])
+        .split(['/', ' '])
+        .next()
+        .unwrap_or_default();
+    let singular = unit.strip_suffix('s').unwrap_or(unit);
+    UNITS.contains(&unit) || UNITS.contains(&singular)
+}
+
 /// Checks the local screening reply: `{"reply": {"answer": ...}}` for a
 /// local answer, or `{"reply": {"cloud_question": ..., "private_terms":
 /// [...]}}` for the cloud.
@@ -202,7 +231,10 @@ pub(crate) fn private_terms(object: &JsonObject) -> Result<Vec<(String, String)>
             .trim_matches(|character: char| !(character.is_alphabetic() || character.is_numeric()));
         let has_letter = trimmed.chars().any(char::is_alphabetic);
         let digits = trimmed.chars().filter(char::is_ascii_digit).count();
-        let identifying = has_letter || digits >= MIN_IDENTIFYING_DIGITS;
+        // Measurements arrive labelled OTHER; a name such as the company
+        // 3M keeps its own category and is never read as one.
+        let measurement = category == "OTHER" && is_measurement(trimmed);
+        let identifying = (has_letter && !measurement) || digits >= MIN_IDENTIFYING_DIGITS;
         if trimmed.chars().count() >= MIN_TERM_CHARACTERS && identifying {
             private_terms.push((category.clone(), trimmed.to_string()));
         }
@@ -229,6 +261,11 @@ mod tests {
                 {"category": "PERSON", "text": "\"Ayşe Demir,\""},
                 {"category": "OTHER", "text": "x"},
                 {"category": "OTHER", "text": "190"},
+                {"category": "OTHER", "text": "3-year"},
+                {"category": "OTHER", "text": "190 mg/dL"},
+                {"category": "OTHER", "text": "2 weeks"},
+                {"category": "OTHER", "text": "60%"},
+                {"category": "ORGANISATION", "text": "3M"},
                 {"category": "ACCOUNT", "text": "4471-0093"}
             ]
         }})))
@@ -245,6 +282,7 @@ mod tests {
             private_terms,
             vec![
                 ("PERSON".to_string(), "Ayşe Demir".to_string()),
+                ("ORGANISATION".to_string(), "3M".to_string()),
                 ("ACCOUNT".to_string(), "4471-0093".to_string())
             ]
         );
