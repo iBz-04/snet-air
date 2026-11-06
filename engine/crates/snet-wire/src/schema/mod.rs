@@ -1,3 +1,4 @@
+mod grammar;
 mod subset;
 mod validate;
 
@@ -94,6 +95,12 @@ impl ReplySchema {
 
     pub fn as_json(&self) -> &serde_json::Value {
         &self.schema
+    }
+
+    /// The GBNF grammar whose language is the JSON texts this schema accepts,
+    /// for a local model whose sampler takes a grammar.
+    pub fn grammar(&self) -> String {
+        grammar::write(&self.root)
     }
 
     /// Checks a reply object against the schema; the violation names schema
