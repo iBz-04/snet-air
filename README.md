@@ -1,4 +1,14 @@
-# snet-air
+<div align="center">
+   <h1>SNET-AIR</h1>
+</div>
+
+<p align="center">
+  <img src="https://res.cloudinary.com/unyt8jsx/image/upload/f_auto,q_auto/antinet-logo-black-on-white-1024" alt="snet-air Logo" width="200"/>
+</p>
+
+<div align="center">
+<p><b>A local model and a cloud model solving tasks together, without your files leaving the machine.</b></p>
+</div>
 
 A small model on your machine reads your files. A large model in the cloud plans the work, asks the questions and writes the answer from what the local model reports. Your files never leave the machine in bulk, and most tokens are read locally.
 
