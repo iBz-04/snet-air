@@ -23,3 +23,14 @@ pub fn without_tokens(text: &str) -> String {
 pub fn spells_out_a_value(mapping: &TaskMapping, pseudonymised: &str) -> bool {
     mapping.holds_spelled_value(&without_tokens(pseudonymised))
 }
+
+/// Corrections a task may ask of the cloud in all.
+pub const MAX_CORRECTIONS: u32 = 1;
+
+/// What the cloud reads after a refused step. `detail` is one of the
+/// protocol's own refusal reasons, which name rules and never material.
+pub fn correction(detail: &str) -> String {
+    format!(
+        "Your last step was refused: {detail}. Send the step again, corrected, in the same schema. This is the only correction this task allows."
+    )
+}

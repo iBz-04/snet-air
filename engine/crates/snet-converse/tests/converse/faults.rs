@@ -27,31 +27,37 @@ fn step(step: &str, text: &str, citations: &[&str]) -> Cloud {
 }
 
 #[tokio::test(flavor = "multi_thread")]
-async fn invalid_cloud_replies_end_the_task() {
+async fn invalid_cloud_replies_end_the_task_once_the_correction_is_spent() {
     let one_quote = || vec![local("It was replaced.", &[("D1", SEAL_QUOTE)])];
     let cases: Vec<(Vec<Cloud>, Vec<Local>, FailureKind)> = vec![
         (
-            vec![step("ask", " ", &[])],
+            vec![step("ask", " ", &[]), step("ask", " ", &[])],
             Vec::new(),
             FailureKind::InvalidCloudReply,
         ),
         (
-            vec![step("ask", "Which seal?", &["C1"])],
+            vec![
+                step("ask", "Which seal?", &["C1"]),
+                step("ask", "Which seal?", &["C1"]),
+            ],
             Vec::new(),
             FailureKind::InvalidCloudReply,
         ),
         (
-            vec![step("not_found", "x".repeat(4_001).as_str(), &[])],
+            vec![
+                step("not_found", "x".repeat(4_001).as_str(), &[]),
+                step("not_found", "x".repeat(4_001).as_str(), &[]),
+            ],
             Vec::new(),
             FailureKind::InvalidCloudReply,
         ),
         (
-            vec![ask("Did ⟦PERSON_9⟧ call?")],
+            vec![ask("Did ⟦PERSON_9⟧ call?"), ask("Did ⟦PERSON_9⟧ call?")],
             Vec::new(),
             FailureKind::InvalidCloudReply,
         ),
         (
-            vec![ask("〚PERSON_1〛 called?")],
+            vec![ask("〚PERSON_1〛 called?"), ask("〚PERSON_1〛 called?")],
             Vec::new(),
             FailureKind::InvalidCloudReply,
         ),
@@ -71,7 +77,11 @@ async fn invalid_cloud_replies_end_the_task() {
             FailureKind::Cloud,
         ),
         (
-            vec![ask("Which seal?"), answer("The inner seal.", &["C1", "C1"])],
+            vec![
+                ask("Which seal?"),
+                answer("The inner seal.", &["C1", "C1"]),
+                answer("The inner seal.", &["C1", "C1"]),
+            ],
             one_quote(),
             FailureKind::InvalidCloudReply,
         ),
@@ -229,4 +239,28 @@ async fn errors_and_debug_output_hold_no_material() {
             assert!(!text.contains(material), "{material} in {text}");
         }
     }
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn a_refused_step_is_corrected_once_and_the_task_goes_on() {
+    let rig = Rig::start(
+        vec![
+            step("ask", " ", &[]),
+            ask("Which seal of pump 3 was replaced?"),
+            answer("The inner seal.", &["C1"]),
+        ],
+        vec![local("It was replaced.", &[("D1", SEAL_QUOTE)])],
+    )
+    .await;
+    rig.conversation()
+        .run(&task("Which seal was replaced?", 2))
+        .await
+        .unwrap();
+    let bodies = rig.cloud_bodies();
+    assert_eq!(bodies.len(), 3);
+    assert!(
+        bodies[1].contains("Your last step was refused: the reply's text is empty"),
+        "{}",
+        bodies[1]
+    );
 }

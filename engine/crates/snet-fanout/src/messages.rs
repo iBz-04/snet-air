@@ -287,11 +287,3 @@ pub(crate) fn local_result(object: &JsonObject) -> Option<LocalResult> {
         quotes: strings_of(object.get("quotes"))?,
     })
 }
-
-/// What the cloud reads after a refused step. `detail` is one of the
-/// protocol's own refusal reasons, which name rules and never material.
-pub(crate) fn correction(detail: &str) -> String {
-    format!(
-        "Your last step was refused: {detail}. Send the step again, corrected, in the same schema. This is the only correction this task allows."
-    )
-}

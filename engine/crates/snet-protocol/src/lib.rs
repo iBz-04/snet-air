@@ -10,7 +10,7 @@ mod errors;
 mod records;
 mod schema;
 
-pub use checks::{spells_out_a_value, without_tokens};
+pub use checks::{MAX_CORRECTIONS, correction, spells_out_a_value, without_tokens};
 pub use citations::{Citations, Cited, CitedPassage, quote_range};
 pub use documents::{Document, holds_bracket, name_is_valid, question_is_valid};
 pub use errors::{FailureKind, ProtocolError};

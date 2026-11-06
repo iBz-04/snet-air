@@ -6,7 +6,7 @@ use crate::errors::{ConversationError, FailureKind};
 use crate::log::{self, Exchange};
 use crate::messages::{self, Step};
 use crate::task::ConversationTask;
-use snet_protocol::{Citations, spells_out_a_value};
+use snet_protocol::{Citations, MAX_CORRECTIONS, correction, spells_out_a_value};
 
 const MAX_CLOUD_TEXT_CHARACTERS: usize = 4_000;
 const MAX_CITATIONS: usize = 32;
@@ -14,6 +14,12 @@ const MAX_QUESTION_BYTES: usize = 512;
 const MAX_LOCAL_ANSWER_CHARACTERS: usize = 600;
 const MAX_QUOTES: usize = 4;
 const MAX_ANSWER_BYTES_PER_TASK: usize = 8 * 1024;
+
+/// A cloud step that kept every rule.
+enum Checked {
+    Ended(ConversationOutcome),
+    Ask(String),
+}
 
 fn invalid_cloud(detail: impl Into<String>) -> ConversationError {
     ConversationError::new(FailureKind::InvalidCloudReply, detail)
@@ -53,7 +59,11 @@ impl RoundState {
         task_message: &OutboundText,
     ) -> Result<ConversationOutcome, ConversationError> {
         let rounds = task.limits.rounds;
-        for round in 1..=rounds {
+        // A step that breaks a rule gets one correction turn per task: the
+        // cloud reads why it was refused and sends the step again.
+        let mut corrections_left = MAX_CORRECTIONS;
+        let mut round = 1;
+        while round <= rounds {
             let last = round == rounds;
             let schema = messages::cloud_schema(pseudonymiser, last, &self.citations.numbers())
                 .map_err(|error| {
@@ -76,46 +86,75 @@ impl RoundState {
                 .await
                 .map_err(|error| ConversationError::new(FailureKind::Cloud, error.to_string()))?;
             self.rounds_done = round;
-            let step = messages::cloud_step(&reply.object).ok_or_else(|| {
-                invalid_cloud("the reply's parts do not match the round's schema")
-            })?;
-            self.check_cloud_step(&step)?;
-            let restored = self
-                .mapping
-                .restore(&step.text)
-                .map_err(|error| invalid_cloud(error.to_string()))?;
-            match step.step {
-                Step::Answer => {
-                    let mut citations = Vec::with_capacity(step.citations.len());
-                    for name in &step.citations {
-                        let cited = self.citations.find(name).ok_or_else(|| {
-                            invalid_cloud("an answer cites a citation not issued")
+            let question = match self.checked_step(&reply.object, last, task) {
+                Ok(Checked::Ended(outcome)) => return Ok(outcome),
+                Ok(Checked::Ask(question)) => question,
+                Err(error)
+                    if error.kind == FailureKind::InvalidCloudReply && corrections_left > 0 =>
+                {
+                    corrections_left -= 1;
+                    let correction = pseudonymiser
+                        .text(&mut self.mapping, &correction(&error.detail))
+                        .map_err(|error| {
+                            ConversationError::new(FailureKind::Pseudonymisation, error.to_string())
                         })?;
-                        citations.push(CitedPassage {
-                            citation: name.clone(),
-                            document: task.documents[cited.document].name.clone(),
-                            range: cited.range.clone(),
-                            text: cited.text.clone(),
-                        });
-                    }
-                    return Ok(ConversationOutcome::Answer {
-                        text: restored,
-                        citations,
-                    });
+                    self.history.push(CloudTurn::Assistant(reply.turn));
+                    self.history.push(CloudTurn::User(correction));
+                    continue;
                 }
-                Step::NotFound => return Ok(ConversationOutcome::NotFound { text: restored }),
-                Step::Ask if last => {
-                    return Err(invalid_cloud("the last round asked another question"));
-                }
-                Step::Ask => {}
-            }
+                Err(error) => return Err(error),
+            };
             let report = self
-                .ask_locally(conversation, task, pseudonymiser, round, restored.as_str())
+                .ask_locally(conversation, task, pseudonymiser, round, &question)
                 .await?;
             self.history.push(CloudTurn::Assistant(reply.turn));
             self.history.push(CloudTurn::User(report));
+            round += 1;
         }
         Err(invalid_cloud("the rounds ended without an answer"))
+    }
+
+    /// Every rule a cloud step must keep: an ending with its citations, or a
+    /// question for the local model, restored.
+    fn checked_step(
+        &self,
+        object: &snet_cloud::JsonObject,
+        last: bool,
+        task: &ConversationTask,
+    ) -> Result<Checked, ConversationError> {
+        let step = messages::cloud_step(object)
+            .ok_or_else(|| invalid_cloud("the reply's parts do not match the round's schema"))?;
+        self.check_cloud_step(&step)?;
+        let restored = self
+            .mapping
+            .restore(&step.text)
+            .map_err(|error| invalid_cloud(error.to_string()))?;
+        match step.step {
+            Step::Answer => {
+                let mut citations = Vec::with_capacity(step.citations.len());
+                for name in &step.citations {
+                    let cited = self
+                        .citations
+                        .find(name)
+                        .ok_or_else(|| invalid_cloud("an answer cites a citation not issued"))?;
+                    citations.push(CitedPassage {
+                        citation: name.clone(),
+                        document: task.documents[cited.document].name.clone(),
+                        range: cited.range.clone(),
+                        text: cited.text.clone(),
+                    });
+                }
+                Ok(Checked::Ended(ConversationOutcome::Answer {
+                    text: restored,
+                    citations,
+                }))
+            }
+            Step::NotFound => Ok(Checked::Ended(ConversationOutcome::NotFound {
+                text: restored,
+            })),
+            Step::Ask if last => Err(invalid_cloud("the last round asked another question")),
+            Step::Ask => Ok(Checked::Ask(restored.as_str().to_string())),
+        }
     }
 
     fn check_cloud_step(&self, step: &messages::CloudStep) -> Result<(), ConversationError> {

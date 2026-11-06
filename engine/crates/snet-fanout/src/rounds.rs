@@ -1,7 +1,9 @@
 use std::sync::Mutex;
 
 use snet_cloud::{CloudRequest, CloudTurn, OutboundText, TaskBudget};
-use snet_protocol::{Citations, CitedPassage, FailureKind, ProtocolError, append};
+use snet_protocol::{
+    Citations, CitedPassage, FailureKind, MAX_CORRECTIONS, ProtocolError, append, correction,
+};
 use snet_pseudonym::{Pseudonymiser, TaskMapping};
 use snet_transcript::{ChunkRunLine, QuoteLine, TaskRecord, Transcript};
 
@@ -13,9 +15,6 @@ use crate::plan::{Material, PlannedJob, check_citations, check_step, plan_jobs};
 use crate::prompts::CLOUD_PROMPT;
 use crate::run::{Slot, run_round};
 use crate::task::FanOutTask;
-
-/// Corrections a task may ask of the cloud in all.
-const MAX_CORRECTIONS: u32 = 1;
 
 /// A cloud step that kept every rule.
 enum Checked {
@@ -127,7 +126,7 @@ impl RoundState {
                 {
                     corrections_left -= 1;
                     let correction = pseudonymiser
-                        .text(&mut self.mapping, &messages::correction(&error.detail))
+                        .text(&mut self.mapping, &correction(&error.detail))
                         .map_err(|error| {
                             ProtocolError::new(FailureKind::Pseudonymisation, error.to_string())
                         })?;
