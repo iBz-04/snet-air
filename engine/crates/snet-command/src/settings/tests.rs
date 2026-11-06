@@ -51,15 +51,35 @@ fn one_key_is_enough_and_everything_else_has_a_default() {
 }
 
 #[test]
+fn melious_needs_only_its_key_and_a_model() {
+    let with_melious = AskArguments {
+        cloud: Some("melious:glm-5.3".to_string()),
+        ..arguments()
+    };
+    let settings = resolve(
+        &with_melious,
+        &environment(&[("MELIOUS_API_KEY", "sk-mel-1")]),
+    )
+    .unwrap();
+    assert_eq!(settings.cloud.provider, Provider::Melious);
+    assert_eq!(settings.cloud.model, "glm-5.3");
+    assert_eq!(settings.cloud.base_url, None);
+    assert_eq!(settings.cloud.effort, "low");
+}
+
+#[test]
 fn a_missing_key_names_the_variable_to_set() {
     for (cloud, variable) in [
         ("anthropic:m", "ANTHROPIC_API_KEY"),
         ("openai:m", "OPENAI_API_KEY"),
+        ("melious:m", "MELIOUS_API_KEY"),
         ("openai-compatible:m", "SNET_CLOUD_API_KEY"),
     ] {
         let with_cloud = AskArguments {
             cloud: Some(cloud.to_string()),
-            cloud_url: Some("https://host/v1".to_string()),
+            cloud_url: cloud
+                .starts_with("openai-compatible")
+                .then(|| "https://host/v1".to_string()),
             ..arguments()
         };
         let empty = environment(&[("ANTHROPIC_API_KEY", ""), ("OPENAI_API_KEY", "")]);
@@ -142,7 +162,7 @@ fn malformed_choices_are_refused() {
                 cloud: Some("azure:m".to_string()),
                 ..arguments()
             },
-            "is not anthropic, openai or openai-compatible",
+            "is not anthropic, openai, melious or openai-compatible",
         ),
         (
             AskArguments {

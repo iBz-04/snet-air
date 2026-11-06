@@ -57,7 +57,7 @@ pub fn resolve(
     })?;
     let provider = Provider::parse(provider_name).ok_or_else(|| {
         CommandError::usage(format!(
-            "the cloud provider `{provider_name}` is not anthropic, openai or openai-compatible"
+            "the cloud provider `{provider_name}` is not anthropic, openai, melious or openai-compatible"
         ))
     })?;
     let base_url = match (&arguments.cloud_url, provider) {

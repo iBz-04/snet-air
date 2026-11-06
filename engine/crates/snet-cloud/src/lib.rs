@@ -27,7 +27,7 @@ pub use budget::{BudgetError, Charge, Prices, TaskBudget, TaskLimits};
 pub use client::{CloudClient, CloudReply};
 pub use config::{
     BaseUrl, CertificateReader, EndpointConfig, InstructionRole, KeyHeader, OpenaiChatSettings,
-    PresetChoice, Provider, WireFormat, WireSettings,
+    OutputCapField, PresetChoice, Provider, WireFormat, WireSettings,
 };
 pub use errors::{CloudError, ConfigError, Failure};
 pub use record::{

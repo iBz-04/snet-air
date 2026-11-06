@@ -77,6 +77,14 @@ pub struct OpenaiChatSettings {
     pub key_header: KeyHeader,
     pub instruction_role: InstructionRole,
     pub send_store_false: bool,
+    pub output_cap_field: OutputCapField,
+}
+
+/// The body field that carries the output cap, which servers name differently.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum OutputCapField {
+    MaxCompletionTokens,
+    MaxTokens,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

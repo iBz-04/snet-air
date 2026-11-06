@@ -8,14 +8,15 @@ use super::ceilings::{
 use super::file::within_ceiling;
 use super::wire_settings;
 use super::{
-    BaseUrl, EndpointConfig, InstructionRole, KeyHeader, OpenaiChatSettings, WireFormat,
-    WireSettings,
+    BaseUrl, EndpointConfig, InstructionRole, KeyHeader, OpenaiChatSettings, OutputCapField,
+    WireFormat, WireSettings,
 };
 use crate::budget::{Prices, TaskLimits};
 use crate::errors::ConfigError;
 
 const ANTHROPIC_BASE_URL: &str = "https://api.anthropic.com/v1";
 const OPENAI_BASE_URL: &str = "https://api.openai.com/v1";
+const MELIOUS_BASE_URL: &str = "https://api.melious.ai/v1";
 const MAX_MODEL_LENGTH: usize = 256;
 
 /// Who serves the cloud model, which fixes the wire format, the key header
@@ -24,6 +25,7 @@ const MAX_MODEL_LENGTH: usize = 256;
 pub enum Provider {
     Anthropic,
     Openai,
+    Melious,
     /// Any server speaking the OpenAI-style chat format at a URL the user
     /// gives, which may sit on a private network.
     OpenaiCompatible,
@@ -34,6 +36,7 @@ impl Provider {
         match text {
             "anthropic" => Some(Self::Anthropic),
             "openai" => Some(Self::Openai),
+            "melious" => Some(Self::Melious),
             "openai-compatible" => Some(Self::OpenaiCompatible),
             _ => None,
         }
@@ -43,6 +46,7 @@ impl Provider {
         match self {
             Self::Anthropic => "anthropic",
             Self::Openai => "openai",
+            Self::Melious => "melious",
             Self::OpenaiCompatible => "openai-compatible",
         }
     }
@@ -52,6 +56,7 @@ impl Provider {
         match self {
             Self::Anthropic => "ANTHROPIC_API_KEY",
             Self::Openai => "OPENAI_API_KEY",
+            Self::Melious => "MELIOUS_API_KEY",
             Self::OpenaiCompatible => "SNET_CLOUD_API_KEY",
         }
     }
@@ -84,6 +89,7 @@ impl EndpointConfig {
         let base_url_text = match (choice.provider, &choice.base_url) {
             (Provider::Anthropic, None) => ANTHROPIC_BASE_URL,
             (Provider::Openai, None) => OPENAI_BASE_URL,
+            (Provider::Melious, None) => MELIOUS_BASE_URL,
             (Provider::OpenaiCompatible, Some(url)) => url.as_str(),
             (Provider::OpenaiCompatible, None) => {
                 return Err(ConfigError::invalid(
@@ -94,7 +100,7 @@ impl EndpointConfig {
             (_, Some(_)) => {
                 return Err(ConfigError::invalid(
                     "base_url",
-                    "only openai-compatible takes a URL; anthropic and openai use their own",
+                    "only openai-compatible takes a URL; the named providers use their own",
                 ));
             }
         };
@@ -106,6 +112,13 @@ impl EndpointConfig {
                 key_header: KeyHeader::AuthorizationBearer,
                 instruction_role: InstructionRole::Developer,
                 send_store_false: true,
+                output_cap_field: OutputCapField::MaxCompletionTokens,
+            }),
+            Provider::Melious => WireSettings::OpenaiChat(OpenaiChatSettings {
+                key_header: KeyHeader::AuthorizationBearer,
+                instruction_role: InstructionRole::System,
+                send_store_false: false,
+                output_cap_field: OutputCapField::MaxTokens,
             }),
             // Servers that copy the chat format widely accept `system` and
             // reject unknown fields such as `store`.
@@ -113,6 +126,7 @@ impl EndpointConfig {
                 key_header: KeyHeader::AuthorizationBearer,
                 instruction_role: InstructionRole::System,
                 send_store_false: false,
+                output_cap_field: OutputCapField::MaxCompletionTokens,
             }),
         };
         let limits = choice.task_limits;

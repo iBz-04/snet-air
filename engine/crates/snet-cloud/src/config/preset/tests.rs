@@ -36,9 +36,24 @@ fn each_provider_has_its_wire_format_url_and_key_variable() {
             key_header: KeyHeader::AuthorizationBearer,
             instruction_role: InstructionRole::Developer,
             send_store_false: true,
+            output_cap_field: crate::config::OutputCapField::MaxCompletionTokens,
         })
     );
     assert_eq!(openai.base_url().host(), "api.openai.com");
+
+    let melious = EndpointConfig::preset(&choice(Provider::Melious, None)).unwrap();
+    assert_eq!(
+        melious.wire(),
+        WireSettings::OpenaiChat(OpenaiChatSettings {
+            key_header: KeyHeader::AuthorizationBearer,
+            instruction_role: InstructionRole::System,
+            send_store_false: false,
+            output_cap_field: crate::config::OutputCapField::MaxTokens,
+        })
+    );
+    assert_eq!(melious.base_url().host(), "api.melious.ai");
+    assert!(!melious.allow_private_addresses);
+    assert_eq!(Provider::parse("melious"), Some(Provider::Melious));
 
     let compatible = EndpointConfig::preset(&choice(
         Provider::OpenaiCompatible,
@@ -50,6 +65,7 @@ fn each_provider_has_its_wire_format_url_and_key_variable() {
 
     assert_eq!(Provider::Anthropic.key_variable(), "ANTHROPIC_API_KEY");
     assert_eq!(Provider::Openai.key_variable(), "OPENAI_API_KEY");
+    assert_eq!(Provider::Melious.key_variable(), "MELIOUS_API_KEY");
     assert_eq!(
         Provider::OpenaiCompatible.key_variable(),
         "SNET_CLOUD_API_KEY"
@@ -72,6 +88,13 @@ fn urls_are_required_or_refused_by_provider() {
     assert_eq!(
         field(EndpointConfig::preset(&choice(
             Provider::Anthropic,
+            Some("https://example.com/v1")
+        ))),
+        "base_url"
+    );
+    assert_eq!(
+        field(EndpointConfig::preset(&choice(
+            Provider::Melious,
             Some("https://example.com/v1")
         ))),
         "base_url"

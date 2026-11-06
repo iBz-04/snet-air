@@ -61,6 +61,7 @@ fn a_full_configuration_of_each_format_loads() {
             key_header: KeyHeader::AuthorizationBearer,
             instruction_role: InstructionRole::Developer,
             send_store_false: true,
+            output_cap_field: crate::config::OutputCapField::MaxCompletionTokens,
         })
     );
 }

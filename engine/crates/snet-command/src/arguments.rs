@@ -5,12 +5,13 @@ use crate::exit::CommandError;
 
 pub const USAGE: &str = "usage: snet ask [options] <question> <file>...
 
-A model on this machine reads the files. A cloud model plans the work and
+A model on your machine reads the files. A cloud model plans the work and
 writes the answer from what the local model reports; it never sees the files.
 
 options:
   --fanout                  split large files into chunks and run small jobs on each
-  --cloud <provider:model>  anthropic:<model>, openai:<model> or openai-compatible:<model>
+  --cloud <provider:model>  anthropic:<model>, openai:<model>, melious:<model>
+                            or openai-compatible:<model>
                             (default: $SNET_CLOUD, else anthropic:claude-sonnet-5-5)
   --cloud-url <url>         the https URL of an openai-compatible server ($SNET_CLOUD_URL)
   --local <ollama:model>    the local model (default: $SNET_LOCAL, else ollama:qwen3:4b),

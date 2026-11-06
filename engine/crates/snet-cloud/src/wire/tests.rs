@@ -83,6 +83,41 @@ fn the_openai_chat_body_holds_exactly_the_fields_of_cld_31() {
 }
 
 #[test]
+fn the_melious_body_caps_output_with_max_tokens_in_the_system_role() {
+    let choice = crate::config::PresetChoice {
+        provider: crate::config::Provider::Melious,
+        model: "glm-5.3".to_string(),
+        base_url: None,
+        effort: "low".to_string(),
+        task_limits: crate::budget::TaskLimits {
+            requests: 12,
+            bytes_sent: 2 * 1024 * 1024,
+            input_tokens: 400_000,
+            output_tokens: 64_000,
+            cost_micro: 0,
+        },
+    };
+    let config = EndpointConfig::preset(&choice).unwrap();
+    let expected = json!({
+        "model": "glm-5.3",
+        "messages": [
+            {"role": "system", "content": "Plan the work."},
+            {"role": "user", "content": "What failed?"},
+            {"role": "assistant", "content": "{\"question\":\"Which log?\"}"},
+            {"role": "user", "content": "The pump log."}
+        ],
+        "max_tokens": 1000,
+        "n": 1,
+        "reasoning_effort": "low",
+        "response_format": {
+            "type": "json_schema",
+            "json_schema": {"name": "answer", "schema": schema().as_json(), "strict": true}
+        }
+    });
+    assert_eq!(body_json(&config, &request()), expected);
+}
+
+#[test]
 fn the_anthropic_messages_body_holds_exactly_the_fields_of_cld_32() {
     let config = load(ANTHROPIC_ENDPOINT);
     let expected = json!({

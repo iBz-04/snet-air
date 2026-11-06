@@ -2,7 +2,10 @@
 //! instruction role and `store`, the Anthropic workspace, and the effort
 //!.
 
-use super::{Effort, InstructionRole, KeyHeader, OpenaiChatSettings, WireFormat, WireSettings};
+use super::{
+    Effort, InstructionRole, KeyHeader, OpenaiChatSettings, OutputCapField, WireFormat,
+    WireSettings,
+};
 use crate::errors::ConfigError;
 
 const WORKSPACE_PREFIX: &str = "wrkspc_";
@@ -43,6 +46,7 @@ pub(super) fn wire_settings(
                 key_header,
                 instruction_role,
                 send_store_false,
+                output_cap_field: OutputCapField::MaxCompletionTokens,
             };
             Ok((WireSettings::OpenaiChat(settings), None))
         }

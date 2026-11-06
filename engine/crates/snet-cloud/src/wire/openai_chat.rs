@@ -3,7 +3,7 @@ use serde::{Deserialize, Serialize};
 use super::{
     CloudRequest, ConversationRole, ReplyText, ReportedUsage, malformed, plain_identifier,
 };
-use crate::config::{Effort, InstructionRole, OpenaiChatSettings};
+use crate::config::{Effort, InstructionRole, OpenaiChatSettings, OutputCapField};
 use crate::errors::Failure;
 use crate::json::describe_json_error;
 use crate::truncation::{TruncatedReply, TruncationStop};
@@ -15,7 +15,10 @@ pub(crate) const REQUEST_ID_HEADER: &str = "x-request-id";
 struct RequestBody<'a> {
     model: &'a str,
     messages: Vec<Message<'a>>,
-    max_completion_tokens: u64,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    max_completion_tokens: Option<u64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    max_tokens: Option<u64>,
     n: u8,
     #[serde(skip_serializing_if = "Option::is_none")]
     store: Option<bool>,
@@ -72,7 +75,10 @@ pub(super) fn request_body(
     serde_json::to_vec(&RequestBody {
         model,
         messages,
-        max_completion_tokens: request.max_output_tokens,
+        max_completion_tokens: (settings.output_cap_field == OutputCapField::MaxCompletionTokens)
+            .then_some(request.max_output_tokens),
+        max_tokens: (settings.output_cap_field == OutputCapField::MaxTokens)
+            .then_some(request.max_output_tokens),
         n: 1,
         store: settings.send_store_false.then_some(false),
         reasoning_effort: effort.wire_value(),
