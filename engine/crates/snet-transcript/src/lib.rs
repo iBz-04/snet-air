@@ -6,9 +6,9 @@ mod recorder;
 mod writer;
 
 pub use lines::{
-    ChargeLine, ChunkRunLine, CitationLine, DocumentLine, FanOutLimitsLine, FanOutStartedLine,
-    JobRunLine, LocalExchangeLine, QuoteLine, TaskEndedLine, TaskLimitsLine, TaskRecord,
-    TaskRefusedLine, TaskStartedLine,
+    ChargeLine, ChunkRunLine, CitationLine, DirectStartedLine, DocumentLine, FanOutLimitsLine,
+    FanOutStartedLine, JobRunLine, LocalExchangeLine, QuoteLine, TaskEndedLine, TaskLimitsLine,
+    TaskRecord, TaskRefusedLine, TaskStartedLine,
 };
 pub use writer::{Transcript, TranscriptError};
 

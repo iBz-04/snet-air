@@ -153,6 +153,21 @@ pub struct JobRunLine {
     pub chunks: Vec<ChunkRunLine>,
 }
 
+/// A question answered by the cloud model alone, with no local material.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+pub struct DirectStartedLine {
+    pub client_time_milliseconds: i64,
+    pub task_id: String,
+    pub question: String,
+    pub earlier_exchanges: u32,
+    pub endpoint_name: String,
+    pub host: String,
+    pub cloud_model: String,
+    pub policy_digest: String,
+    pub cloud_prompt_sha256: String,
+    pub seconds: u64,
+}
+
 /// One step of a task's log. None of them carries the pseudonym mapping, so
 /// the transcript never holds the values pseudonymisation replaced.
 #[derive(Debug, Clone, PartialEq, Serialize)]
@@ -164,4 +179,5 @@ pub enum TaskRecord {
     TaskEnded(TaskEndedLine),
     FanOutStarted(FanOutStartedLine),
     JobRun(JobRunLine),
+    DirectStarted(DirectStartedLine),
 }
