@@ -12,25 +12,29 @@
 
 ## Quick start
 
-Needs [Rust](https://rustup.rs) and an [Anthropic API key](https://console.anthropic.com).
+Needs [Rust](https://rustup.rs), a cloud API key and a local model.
 
-**With quaynor** (no server):
-
-```bash
-cargo install --locked --git https://github.com/iBz-04/snet-air snet-command --features gguf
-curl -L -o qwen3-4b.gguf https://huggingface.co/bartowski/Qwen_Qwen3-4B-GGUF/resolve/main/Qwen_Qwen3-4B-Q4_K_M.gguf
-export ANTHROPIC_API_KEY=sk-ant-...
-snet ask --local gguf:qwen3-4b.gguf "Who signed the contract?" contract.txt
-```
-
-**With [Ollama](https://ollama.com):**
+**1. Install** with [Ollama](https://ollama.com):
 
 ```bash
 cargo install --locked --git https://github.com/iBz-04/snet-air snet-command
 ollama pull qwen3:4b
-export ANTHROPIC_API_KEY=sk-ant-...
-snet ask "Who signed the contract?" contract.txt
 ```
+
+or with quaynor (no server):
+
+```bash
+cargo install --locked --git https://github.com/iBz-04/snet-air snet-command --features gguf
+curl -L -o qwen3-4b.gguf https://huggingface.co/bartowski/Qwen_Qwen3-4B-GGUF/resolve/main/Qwen_Qwen3-4B-Q4_K_M.gguf
+```
+
+**2. Run `snet`.** It asks for your cloud, key and local model, then takes questions. Attach files with `@`:
+
+```
+❯ Who signed the contract? @contract.txt
+```
+
+For scripts: `snet ask "Who signed the contract?" contract.txt`
 
 | Cloud | Flag | Key |
 |---|---|---|
