@@ -9,6 +9,7 @@ const LAZY_DFA_LIMIT: usize = 2 * 1024 * 1024;
 
 /// A policy pattern wrapped so its end boundary takes part in choosing the
 /// match; group 1 is the value.
+#[derive(Clone)]
 pub(crate) struct PolicyPattern {
     pub(crate) category: String,
     pub(crate) regex: Regex,

@@ -1,6 +1,7 @@
 pub(crate) mod dictionary;
 pub(crate) mod file;
 mod pattern;
+mod task_terms;
 
 use std::path::Path;
 
@@ -42,6 +43,8 @@ pub struct Policy {
     pub(crate) enabled: Vec<Builtin>,
     pub(crate) dictionary_categories: Vec<String>,
     pub(crate) automaton: Option<AhoCorasick>,
+    /// The folded terms the automaton was built from, by automaton index.
+    pub(crate) terms: Vec<zeroize::Zeroizing<String>>,
     pub(crate) term_dictionary: Vec<usize>,
     pub(crate) patterns: Vec<PolicyPattern>,
     pub(crate) passthrough: Vec<PassthroughRule>,
@@ -126,18 +129,7 @@ impl Policy {
             }
             dictionary_categories.push(entry.category.clone());
         }
-        let automaton = if all_terms.is_empty() {
-            None
-        } else {
-            Some(
-                AhoCorasick::builder()
-                    .match_kind(MatchKind::Standard)
-                    .build(all_terms.iter().map(|term| term.as_bytes()))
-                    .map_err(|_| PolicyError::Limit {
-                        limit: "the dictionary automaton's size",
-                    })?,
-            )
-        };
+        let automaton = term_automaton(&all_terms)?;
 
         let mut patterns = Vec::with_capacity(parsed.patterns.len());
         for (position, entry) in parsed.patterns.iter().enumerate() {
@@ -202,6 +194,7 @@ impl Policy {
             enabled: parsed.enabled,
             dictionary_categories,
             automaton,
+            terms: all_terms,
             term_dictionary,
             patterns,
             passthrough,
@@ -237,6 +230,22 @@ impl Policy {
             Source::Builtin(kind) => kind.name(),
         }
     }
+}
+
+/// The matcher over every folded dictionary term, or none without terms.
+fn term_automaton(
+    terms: &[zeroize::Zeroizing<String>],
+) -> Result<Option<AhoCorasick>, PolicyError> {
+    if terms.is_empty() {
+        return Ok(None);
+    }
+    AhoCorasick::builder()
+        .match_kind(MatchKind::Standard)
+        .build(terms.iter().map(|term| term.as_bytes()))
+        .map(Some)
+        .map_err(|_| PolicyError::Limit {
+            limit: "the dictionary automaton's size",
+        })
 }
 
 /// Each file as its length, big-endian, then its bytes.
