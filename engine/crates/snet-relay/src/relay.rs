@@ -222,19 +222,27 @@ impl Relay<'_> {
         local_tokens: &mut u64,
         check: impl Fn(&snet_local::JsonObject) -> Result<T, ProtocolError>,
     ) -> Result<(LocalAnswer, T), ProtocolError> {
-        let checked = match self.local.ask(request).await {
+        // A reply that fails its checks is still recorded, so the
+        // transcript shows what the local model wrote.
+        let (answer, checked) = match self.local.ask(request).await {
             Ok(answer) => {
                 *local_tokens += answer.prompt_tokens + answer.completion_tokens;
-                check(&answer.object).map(|value| (answer, value))
+                let checked = check(&answer.object);
+                (Some(answer), checked)
             }
-            Err(error) => Err(ProtocolError::new(FailureKind::Local, error.to_string())),
+            Err(error) => (
+                None,
+                Err(ProtocolError::new(FailureKind::Local, error.to_string())),
+            ),
         };
-        let record = match &checked {
-            Ok((answer, _)) => log::exchange(&task.task_id, step, question, Some(answer), None)?,
-            Err(error) => log::exchange(&task.task_id, step, question, None, Some(error.kind))?,
-        };
+        let error_kind = checked.as_ref().err().map(|error| error.kind);
+        let record = log::exchange(&task.task_id, step, question, answer.as_ref(), error_kind)?;
         append(self.transcript, record)?;
-        checked
+        let value = checked?;
+        let answer = answer.ok_or_else(|| {
+            ProtocolError::new(FailureKind::Local, "a checked reply without an answer")
+        })?;
+        Ok((answer, value))
     }
 
     async fn ask_cloud(

@@ -300,7 +300,7 @@ async fn a_question_without_files_goes_through_both_models() {
         false,
         vec![json!({"answer": "Slow start doubles the window each round trip."})],
         Ollama::AnswersInTurn(vec![
-            json!({"local_answer": "", "cloud_question": "What is TCP slow start?", "private_terms": []}),
+            json!({"reply": {"cloud_question": "What is TCP slow start?", "private_terms": []}}),
             json!({"private_terms": []}),
         ]),
     )
@@ -341,11 +341,9 @@ async fn a_greeting_is_answered_locally_and_nothing_is_sent() {
     let result = run_with_files(
         false,
         Vec::new(),
-        Ollama::AnswersInTurn(vec![json!({
-                "local_answer": "Hi! What would you like to know?",
-            "cloud_question": "",
-            "private_terms": []
-        })]),
+        Ollama::AnswersInTurn(vec![
+            json!({"reply": {"answer": "Hi! What would you like to know?"}}),
+        ]),
     )
     .await;
     assert_eq!(result.exit, Ok(Exit::Success));

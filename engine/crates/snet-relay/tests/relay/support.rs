@@ -32,20 +32,15 @@ pub fn screened(cloud_question: &str, private_terms: &[(&str, &str)]) -> Local {
         .iter()
         .map(|(category, text)| json!({"category": category, "text": text}))
         .collect();
-    Local::Screened(json!({
-        "local_answer": "",
+    Local::Screened(json!({"reply": {
         "cloud_question": cloud_question,
         "private_terms": terms
-    }))
+    }}))
 }
 
 /// A screening reply in which the local model answers itself.
 pub fn answered_locally(answer: &str) -> Local {
-    Local::Screened(json!({
-        "local_answer": answer,
-        "cloud_question": "",
-        "private_terms": []
-    }))
+    Local::Screened(json!({"reply": {"answer": answer}}))
 }
 
 /// The check pass's reply: what private details are still in the question.
