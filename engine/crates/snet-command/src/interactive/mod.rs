@@ -64,11 +64,13 @@ impl Session {
         }
     }
 
-    /// The local model's name, without its `ollama:` or `gguf:` prefix.
+    /// The local model's name: a pulled model's catalog name, or the name
+    /// after its `ollama:` or `gguf:` prefix.
     fn local_model_name(&self) -> &str {
-        self.local
-            .split_once(':')
-            .map_or(self.local.as_str(), |(_, name)| name)
+        ["ollama:", "gguf:"]
+            .iter()
+            .find_map(|prefix| self.local.strip_prefix(prefix))
+            .unwrap_or(&self.local)
     }
 
     /// The cloud model's name, without its provider prefix.
@@ -220,12 +222,11 @@ fn ready_local(
         Ok::<_, String>(listed)
     });
     spinner.finish_and_clear();
-    let listed =
-        ready.map_err(|error| CommandError::configuration(format!("the local model: {error}")))?;
+    ready.map_err(|error| CommandError::configuration(format!("the local model: {error}")))?;
     println!(
         "{} {}",
         Style::new().green().apply_to("✔"),
-        dim().apply_to(format!("{} is ready", listed.name))
+        dim().apply_to(format!("{} is ready", session.local_model_name()))
     );
     Ok(local)
 }
