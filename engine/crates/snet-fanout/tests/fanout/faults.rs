@@ -68,8 +68,12 @@ async fn terms_that_could_test_for_values_and_bad_questions_are_refused() {
         ("", &[]),
     ];
     for (question, terms) in cases {
+        // The same refused plan twice: the one correction is spent.
         let rig = Rig::start(
-            vec![plan("Probe.", &[(question, terms)])],
+            vec![
+                plan("Probe.", &[(question, terms)]),
+                plan("Probe.", &[(question, terms)]),
+            ],
             nothing_relevant(),
         )
         .await;
@@ -84,11 +88,41 @@ async fn terms_that_could_test_for_values_and_bad_questions_are_refused() {
             "{question} {terms:?}"
         );
         assert_eq!(rig.local_chats(), 0);
+        assert_eq!(rig.cloud_bodies().len(), 2);
         assert_eq!(
             rig.task_end().error_kind.as_deref(),
             Some("invalid_cloud_reply")
         );
     }
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn a_refused_step_gets_one_correction_that_names_the_rule() {
+    let rig = Rig::start(
+        vec![
+            plan("Probe.", &[("Which seal?", &["pump 3"])]),
+            plan("Probe.", &[("Which seal?", &["seal"])]),
+            crate::support::answer("The inner seal.", &["C1"]),
+        ],
+        crate::support::quoting("seal", "The inner seal was replaced."),
+    )
+    .await;
+    rig.fan_out()
+        .run(&task("Which seal was replaced?", 1))
+        .await
+        .unwrap();
+    let bodies = rig.cloud_bodies();
+    assert_eq!(bodies.len(), 3);
+    assert!(
+        bodies[1].contains("Your last step was refused: a plain term must be"),
+        "{}",
+        bodies[1]
+    );
+    assert_eq!(
+        bodies[2].matches("Your last step was refused").count(),
+        1,
+        "the history keeps the one correction"
+    );
 }
 
 #[tokio::test(flavor = "multi_thread")]

@@ -14,6 +14,15 @@ use crate::prompts::CLOUD_PROMPT;
 use crate::run::{Slot, run_round};
 use crate::task::FanOutTask;
 
+/// Corrections a task may ask of the cloud in all.
+const MAX_CORRECTIONS: u32 = 1;
+
+/// A cloud step that kept every rule.
+enum Checked {
+    Ended(FanOutOutcome),
+    Plan(Vec<PlannedJob>),
+}
+
 fn invalid(detail: impl Into<String>) -> ProtocolError {
     ProtocolError::new(FailureKind::InvalidCloudReply, detail)
 }
@@ -77,10 +86,14 @@ impl RoundState {
             pseudonymiser,
             task_message,
             material,
-            longest_chunk,
+            ..
         } = inputs;
         let requests = task.limits.plan_rounds + 1;
-        for request_number in 1..=requests {
+        // A step that breaks a rule gets one correction turn per task: the
+        // cloud reads why it was refused and sends the step again.
+        let mut corrections_left = MAX_CORRECTIONS;
+        let mut request_number = 1;
+        while request_number <= requests {
             let last = request_number == requests;
             let schema = messages::cloud_schema(pseudonymiser, last, &self.citations.numbers())
                 .map_err(|error| {
@@ -104,35 +117,78 @@ impl RoundState {
                 .send(budget, request)
                 .await
                 .map_err(|error| ProtocolError::new(FailureKind::Cloud, error.to_string()))?;
-            self.cloud_requests = request_number;
-            let step = cloud_step(&reply.object)
-                .ok_or_else(|| invalid("the reply's parts do not match the request's schema"))?;
-            check_step(&step)?;
-            let text = self
-                .mapping
-                .restore(&step.text)
-                .map_err(|error| invalid(error.to_string()))?;
-            match step.step {
-                Step::Answer => {
-                    check_citations(&step, &self.citations)?;
-                    let citations = step
-                        .citations
-                        .iter()
-                        .filter_map(|name| self.citations.find(name))
-                        .map(|cited| CitedPassage {
-                            citation: format!("C{}", cited.number),
-                            document: task.documents[cited.document].name.clone(),
-                            range: cited.range.clone(),
-                            text: cited.text.clone(),
-                        })
-                        .collect();
-                    return Ok(FanOutOutcome::Answer { text, citations });
+            self.cloud_requests += 1;
+            let checked = self.checked_step(&reply.object, last, &inputs);
+            let jobs = match checked {
+                Ok(Checked::Ended(outcome)) => return Ok(outcome),
+                Ok(Checked::Plan(jobs)) => jobs,
+                Err(error)
+                    if error.kind == FailureKind::InvalidCloudReply && corrections_left > 0 =>
+                {
+                    corrections_left -= 1;
+                    let correction = pseudonymiser
+                        .text(&mut self.mapping, &messages::correction(&error.detail))
+                        .map_err(|error| {
+                            ProtocolError::new(FailureKind::Pseudonymisation, error.to_string())
+                        })?;
+                    self.history.push(CloudTurn::Assistant(reply.turn));
+                    self.history.push(CloudTurn::User(correction));
+                    continue;
                 }
-                Step::NotFound => return Ok(FanOutOutcome::NotFound { text }),
-                Step::Plan if last => return Err(invalid("the last request planned again")),
-                Step::Plan => {}
+                Err(error) => return Err(error),
+            };
+            let report = self
+                .run_plan(fan_out, task, pseudonymiser, material, jobs, request_number)
+                .await?;
+            self.history.push(CloudTurn::Assistant(reply.turn));
+            self.history.push(CloudTurn::User(report));
+            request_number += 1;
+        }
+        Err(invalid("the requests ended without an answer"))
+    }
+
+    /// Every rule a cloud step must keep: an ending with its citations, or a
+    /// plan whose jobs can run.
+    fn checked_step(
+        &self,
+        object: &snet_cloud::JsonObject,
+        last: bool,
+        inputs: &RunInputs<'_>,
+    ) -> Result<Checked, ProtocolError> {
+        let RunInputs {
+            fan_out,
+            task,
+            pseudonymiser,
+            material,
+            longest_chunk,
+            ..
+        } = inputs;
+        let step = cloud_step(object)
+            .ok_or_else(|| invalid("the reply's parts do not match the request's schema"))?;
+        check_step(&step)?;
+        let text = self
+            .mapping
+            .restore(&step.text)
+            .map_err(|error| invalid(error.to_string()))?;
+        match step.step {
+            Step::Answer => {
+                check_citations(&step, &self.citations)?;
+                let citations = step
+                    .citations
+                    .iter()
+                    .filter_map(|name| self.citations.find(name))
+                    .map(|cited| CitedPassage {
+                        citation: format!("C{}", cited.number),
+                        document: task.documents[cited.document].name.clone(),
+                        range: cited.range.clone(),
+                        text: cited.text.clone(),
+                    })
+                    .collect();
+                Ok(Checked::Ended(FanOutOutcome::Answer { text, citations }))
             }
-            let jobs = plan_jobs(
+            Step::NotFound => Ok(Checked::Ended(FanOutOutcome::NotFound { text })),
+            Step::Plan if last => Err(invalid("the last request planned again")),
+            Step::Plan => plan_jobs(
                 &step,
                 &self.mapping,
                 pseudonymiser,
@@ -140,14 +196,9 @@ impl RoundState {
                 longest_chunk,
                 fan_out.local,
                 task.limits.local_output_tokens,
-            )?;
-            let report = self
-                .run_plan(fan_out, task, pseudonymiser, material, jobs, request_number)
-                .await?;
-            self.history.push(CloudTurn::Assistant(reply.turn));
-            self.history.push(CloudTurn::User(report));
+            )
+            .map(Checked::Plan),
         }
-        Err(invalid("the requests ended without an answer"))
     }
 
     /// Runs, filters and logs one plan.
