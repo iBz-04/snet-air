@@ -11,19 +11,15 @@ description = "Asks the local model, served by Ollama on this machine, for schem
 [features]
 # The in-process GGUF backend. Building llama.cpp needs a C++ toolchain and
 # CMake, so the default build stays Ollama-only.
-gguf = ["dep:quaynor", "dep:llama-cpp-sys-2", "dep:sha2"]
+gguf = ["dep:quaynor", "dep:sha2"]
 
 [dependencies]
 bytes = "1.12.1"
 http = "1.5.0"
 http-body-util = "0.1.5"
 hyper = { version = "1.12.0", default-features = false, features = ["client", "http1"] }
-# Constraint only: llama-cpp-2 0.1.154, which quaynor pins, asks for
-# llama-cpp-sys-2 ^0.1.154, and later releases changed the bindings it calls.
-llama-cpp-sys-2 = { version = "=0.1.154", optional = true }
-# Pinned to the commit that makes tools and downloads optional, until that
-# release is published.
-quaynor = { git = "https://github.com/iBz-04/quaynor", rev = "13338440c5bf33b34ed6eb5ba67282eb6beb0be5", default-features = false, optional = true }
+# Without default features: no tool sandboxes and no model downloads.
+quaynor = { version = "2.3.0", default-features = false, optional = true }
 serde = { version = "1.0.229", features = ["derive"] }
 serde_json = "1.0.154"
 sha2 = { version = "0.11.1", optional = true }

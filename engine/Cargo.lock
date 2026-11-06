@@ -503,7 +503,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "39cab71617ae0d63f51a36d69f866391735b51691dbda63cf6f96d042b63efeb"
 dependencies = [
  "libc",
- "windows-sys 0.61.2",
+ "windows-sys 0.52.0",
 ]
 
 [[package]]
@@ -1409,7 +1409,8 @@ dependencies = [
 [[package]]
 name = "quaynor"
 version = "2.3.0"
-source = "git+https://github.com/iBz-04/quaynor?rev=13338440c5bf33b34ed6eb5ba67282eb6beb0be5#13338440c5bf33b34ed6eb5ba67282eb6beb0be5"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "f9ebac615b05f4fa0ac5b18ac705cc2c339d50e36f18157bc84c6ea1b4bb6252"
 dependencies = [
  "ahash",
  "chrono",
@@ -1440,7 +1441,8 @@ dependencies = [
 [[package]]
 name = "quaynor-gbnf"
 version = "0.2.0"
-source = "git+https://github.com/iBz-04/quaynor?rev=13338440c5bf33b34ed6eb5ba67282eb6beb0be5#13338440c5bf33b34ed6eb5ba67282eb6beb0be5"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "c4fc3909fde04f677bd004d56dff32e394d73cbdc167642905b1b2da5f82f521"
 dependencies = [
  "jsonschema",
  "serde_json",
@@ -1449,7 +1451,8 @@ dependencies = [
 [[package]]
 name = "quaynor-gbnf-macro"
 version = "0.2.0"
-source = "git+https://github.com/iBz-04/quaynor?rev=13338440c5bf33b34ed6eb5ba67282eb6beb0be5#13338440c5bf33b34ed6eb5ba67282eb6beb0be5"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "960d9c457c59b3bb6e25ce56c6af525fc37c9bc992db8fee81fd7fbb04f4402b"
 dependencies = [
  "proc-macro2",
  "quaynor-gbnf",
@@ -1674,7 +1677,7 @@ dependencies = [
  "errno",
  "libc",
  "linux-raw-sys",
- "windows-sys 0.61.2",
+ "windows-sys 0.52.0",
 ]
 
 [[package]]
@@ -1941,7 +1944,6 @@ dependencies = [
  "http",
  "http-body-util",
  "hyper",
- "llama-cpp-sys-2",
  "quaynor",
  "serde",
  "serde_json",
@@ -2112,7 +2114,7 @@ dependencies = [
  "getrandom 0.4.3",
  "once_cell",
  "rustix",
- "windows-sys 0.61.2",
+ "windows-sys 0.52.0",
 ]
 
 [[package]]
@@ -2542,7 +2544,7 @@ version = "0.1.11"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "c2a7b1c03c876122aa43f3020e6c3c3ee5c05081c9a00739faf7503aeba10d22"
 dependencies = [
- "windows-sys 0.61.2",
+ "windows-sys 0.52.0",
 ]
 
 [[package]]

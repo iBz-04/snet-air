@@ -82,6 +82,4 @@ features = [
 unknown-registry = "deny"
 unknown-git = "deny"
 allow-registry = ["https://github.com/rust-lang/crates.io-index"]
-# The GGUF backend's engine at a pinned commit, until its release with
-# optional tools and downloads is on crates.io.
-allow-git = ["https://github.com/iBz-04/quaynor"]
+allow-git = []
