@@ -1,0 +1,81 @@
+# A version tag builds snet with its built-in engine for macOS, Linux and
+# Windows and publishes the archives, with their SHA-256 sums, as a release
+# that install.sh downloads.
+name: release
+
+on:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: read
+
+defaults:
+  run:
+    shell: bash
+
+jobs:
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: macos-latest
+            target: aarch64-apple-darwin
+            archive: snet-macos-arm64.tar.gz
+          - os: ubuntu-latest
+            target: x86_64-unknown-linux-gnu
+            archive: snet-linux-x86_64.tar.gz
+          - os: windows-latest
+            target: x86_64-pc-windows-msvc
+            archive: snet-windows-x86_64.zip
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Install the pinned toolchain
+        working-directory: engine
+        run: rustup toolchain install && rustup target add ${{ matrix.target }}
+      # The engine uses Vulkan on Linux and Windows and needs its SDK to build.
+      - if: matrix.os != 'macos-latest'
+        uses: jakoch/install-vulkan-sdk-action@3bf4ed432a5958c13d41590b264229022d011c00 # v1.2.5
+        with:
+          vulkan_version: 1.4.304.0
+          cache: true
+      - name: Build
+        working-directory: engine
+        run: cargo build --release --locked -p snet-command --features gguf --target ${{ matrix.target }}
+      - name: Package
+        run: |
+          binary=engine/target/${{ matrix.target }}/release/snet
+          mkdir -p dist
+          if [ "${{ matrix.os }}" = "windows-latest" ]; then
+            cp "$binary.exe" dist/snet.exe
+            (cd dist && 7z a "../${{ matrix.archive }}" snet.exe)
+          else
+            cp "$binary" dist/snet
+            tar -czf "${{ matrix.archive }}" -C dist snet
+          fi
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: ${{ matrix.archive }}
+          path: ${{ matrix.archive }}
+
+  publish:
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          path: dist
+          merge-multiple: true
+      - name: Checksums
+        working-directory: dist
+        run: sha256sum snet-* > SHA256SUMS
+      - name: Publish the release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh release create "${{ github.ref_name }}" dist/* --repo "${{ github.repository }}" --title "${{ github.ref_name }}" --generate-notes
