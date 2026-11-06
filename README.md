@@ -28,7 +28,7 @@ cargo install --locked --git https://github.com/iBz-04/snet-air snet-command --f
 curl -L -o qwen3-4b.gguf https://huggingface.co/bartowski/Qwen_Qwen3-4B-GGUF/resolve/main/Qwen_Qwen3-4B-Q4_K_M.gguf
 ```
 
-**2. Run `snet`.** It asks for your cloud, key and local model, then takes questions. Ask anything; attach files with `@` and only the local model reads them:
+**2. Run `snet`.** It asks for your cloud, key and local model, then takes questions. Ask anything; the local model screens every question, and reads any file you attach with `@`:
 
 ```
 ❯ What is TCP slow start?
@@ -51,7 +51,8 @@ For scripts: `snet ask "What is TCP slow start?"` or `snet ask "Who signed the c
 
 ## Privacy
 
-- Your files are read only by the local model. Questions without files go to the cloud model directly.
+- Every question goes through the local model first. Your files are read only by it.
+- For a question without files, the local model removes private details (names, companies, addresses, IDs) and condenses it; the cloud only sees that short question, and `snet` shows you exactly what was sent.
 - Personal data is pseudonymised before anything is sent.
 - Everything sent is logged in `~/.snet/transcripts/`.
 
