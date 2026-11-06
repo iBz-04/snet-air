@@ -7,37 +7,46 @@
 </p>
 
 <div align="center">
-<p><b>A local model and a cloud model solving tasks together, without your files leaving the machine.</b></p>
+<p><b>A local model and a cloud model solving tasks together, without your files leaving your machine.</b></p>
 </div>
 
-A small model on your machine reads your files. A large model in the cloud plans the work, asks the questions and writes the answer from what the local model reports. Your files never leave the machine in bulk, and most tokens are read locally.
+A small model on your machine reads your files. A large model in the cloud plans the work, asks the questions and writes the answer from what the local model reports. Your files never leave your machine in bulk, and most tokens are read locally.
 
+## Choose your local engine
+
+`snet` runs the local model on your machine with either of two engines. Pick one:
+
+| | quaynor | Ollama |
+|---|---|---|
+| What it is | The [quaynor](https://github.com/iBz-04/quaynor) engine built into `snet`, running a GGUF file in the same process | A separate [Ollama](https://ollama.com) server on your machine |
+| What you need | A GGUF model file | Ollama running, with a model pulled |
+| Server | None | `ollama serve` |
+| Choose it with | `--local gguf:<file>` | `--local ollama:<model>` (the default) |
+
+Both run fully on your machine, and both get the same checks, limits and transcript.
+
+## Install and run
+
+You need Rust 1.98 or newer and an API key for a cloud model.
+
+### With quaynor
+
+```bash
+cargo install --locked --git https://github.com/iBz-04/snet-air snet-command --features gguf
+export ANTHROPIC_API_KEY=sk-...
+snet ask --local gguf:./Qwen_Qwen3-4B-Q4_K_M.gguf "Who signed the contract and when?" contract.txt
 ```
+
+The `gguf` feature builds llama.cpp, so it needs CMake and a C++ compiler (and the Vulkan SDK on Linux and Windows). The local model's answers are forced into the expected JSON shape by a grammar, and the file's SHA-256 is recorded as the model's identity. Download GGUF files yourself; `snet` fetches nothing. Set `SNET_LOCAL=gguf:<file>` to make it your default.
+
+### With Ollama
+
+```bash
+cargo install --locked --git https://github.com/iBz-04/snet-air snet-command
 ollama pull qwen3:4b
 export ANTHROPIC_API_KEY=sk-...
 snet ask "Who signed the contract and when?" contract.txt
 ```
-
-## Install
-
-Build from source with Rust 1.98 or newer:
-
-```bash
-cargo install --locked --git https://github.com/iBz-04/snet-air snet-command
-```
-
-You also need [Ollama](https://ollama.com) running on this machine with a model pulled, and an API key for a cloud model.
-
-### Without Ollama: a GGUF file in this process
-
-Build with the `gguf` feature and `snet` runs a GGUF model itself through the [quaynor](https://github.com/iBz-04/quaynor) engine, with no server:
-
-```bash
-cargo install --locked --git https://github.com/iBz-04/snet-air snet-command --features gguf
-snet ask --local gguf:./Qwen_Qwen3-4B-Q4_K_M.gguf "Who signed the contract and when?" contract.txt
-```
-
-This builds llama.cpp, so it needs CMake and a C++ compiler (and the Vulkan SDK on Linux and Windows). The local model's answers are forced into the expected JSON shape by a grammar, and the file's SHA-256 is recorded as the model's identity. Download GGUF files yourself; `snet` fetches nothing.
 
 ## How it works
 
@@ -62,7 +71,7 @@ The inner seal of pump 3 was replaced on day 7.
 - A local report that copies a quote or spells out a protected value is refused, not sent.
 - Every request is written to a transcript before it is sent, exactly as sent and without the API key: `~/.snet/transcripts/<task>.jsonl`. Its path is printed after each answer. The pseudonym mapping is never written there.
 - The cloud's replies are checked against a strict schema. They are data, never code: nothing the cloud writes is run, opened or fetched.
-- The local model must run on this machine: in this process from a GGUF file, or in Ollama, and `snet` refuses an `OLLAMA_HOST` that points anywhere else.
+- The local model runs on your machine: inside `snet` through quaynor, or in Ollama, and `snet` refuses an `OLLAMA_HOST` that points anywhere else.
 - No telemetry and no update checks.
 
 ## Options
@@ -73,8 +82,8 @@ snet ask [options] <question> <file>...
   --fanout                  split large files into chunks and run small jobs on each
   --cloud <provider:model>  anthropic:<model>, openai:<model> or openai-compatible:<model>
   --cloud-url <url>         the https URL of an openai-compatible server
-  --local <ollama:model>    the local model (default ollama:qwen3:4b),
-          <gguf:file>       or a GGUF file run in this process (needs --features gguf)
+  --local <gguf:file>       a GGUF file run by quaynor (needs --features gguf),
+          <ollama:model>    or an Ollama model (default ollama:qwen3:4b)
   --context <tokens>        the local model's context window (default 8192)
   --effort <level>          how hard the cloud model thinks (default low)
   --rounds <n>              conversation rounds, 2 to 8 (default 4)
