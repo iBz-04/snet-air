@@ -135,7 +135,11 @@ async fn run(cloud_script: Vec<Value>, ollama: Ollama) -> Run {
     };
     let mut output = Vec::new();
     let mut errors = Vec::new();
-    let exit = run_prepared(prepared, &mut output, &mut errors).await;
+    let local = LocalModel::new(prepared.settings.local.clone());
+    let exit = match execute(prepared, &local).await {
+        Ok(finished) => report(finished, &mut output, &mut errors),
+        Err(error) => Err(error),
+    };
     let transcripts: Vec<_> = match std::fs::read_dir(home.path().join("transcripts")) {
         Ok(entries) => entries.map(|entry| entry.unwrap().path()).collect(),
         Err(_) => Vec::new(),

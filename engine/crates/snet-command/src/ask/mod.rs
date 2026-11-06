@@ -17,7 +17,7 @@ use crate::output::{self, Spending};
 use crate::settings::{self, Settings};
 
 /// How a task ended.
-enum Ended {
+pub(crate) enum Ended {
     Answer {
         text: Restored,
         citations: Vec<CitedPassage>,
@@ -30,8 +30,14 @@ enum Ended {
     Failed(ProtocolError),
 }
 
+/// A finished task and where its transcript was written.
+pub(crate) struct Finished {
+    pub(crate) ended: Ended,
+    pub(crate) transcript: std::path::PathBuf,
+}
+
 /// A task ready to run: its settings, policy, files and cloud endpoint.
-struct Prepared {
+pub(crate) struct Prepared {
     settings: Settings,
     question: String,
     policy: Policy,
@@ -46,6 +52,18 @@ pub async fn run(
     output: &mut dyn Write,
     errors: &mut dyn Write,
 ) -> Result<Exit, CommandError> {
+    let prepared = prepare(arguments, environment)?;
+    let local = LocalModel::new(prepared.settings.local.clone());
+    let finished = execute(prepared, &local).await?;
+    report(finished, output, errors)
+}
+
+/// Resolves the settings, loads the policy, reads the files and builds the
+/// cloud endpoint, before anything runs.
+pub(crate) fn prepare(
+    arguments: &AskArguments,
+    environment: &dyn Environment,
+) -> Result<Prepared, CommandError> {
     let settings = settings::resolve(arguments, environment)?;
     let policy = match &settings.policy {
         Some(path) => Policy::load(path).map_err(|error| {
@@ -66,21 +84,20 @@ pub async fn run(
         .collect::<Result<Vec<_>, _>>()?;
     let endpoint = EndpointConfig::preset(&settings.cloud)
         .map_err(|error| CommandError::configuration(format!("the cloud model: {error}")))?;
-    let prepared = Prepared {
+    Ok(Prepared {
         settings,
         question: arguments.question.clone(),
         policy,
         files,
         endpoint,
-    };
-    run_prepared(prepared, output, errors).await
+    })
 }
 
-async fn run_prepared(
+/// Runs one task with `local`, which answers every task of a session.
+pub(crate) async fn execute(
     prepared: Prepared,
-    output: &mut dyn Write,
-    errors: &mut dyn Write,
-) -> Result<Exit, CommandError> {
+    local: &LocalModel,
+) -> Result<Finished, CommandError> {
     let Prepared {
         settings,
         question,
@@ -88,7 +105,6 @@ async fn run_prepared(
         files,
         endpoint,
     } = prepared;
-    let local = LocalModel::new(settings.local);
     // Before anything goes to the cloud: Ollama answers and has the model,
     // or the GGUF file is loaded.
     local
@@ -116,7 +132,7 @@ async fn run_prepared(
         };
         let protocol = FanOut {
             cloud: &cloud,
-            local: &local,
+            local,
             policy: &policy,
             transcript: &transcript,
             budget,
@@ -149,7 +165,7 @@ async fn run_prepared(
         };
         let protocol = Conversation {
             cloud: &cloud,
-            local: &local,
+            local,
             policy: &policy,
             transcript: &transcript,
             budget,
@@ -177,15 +193,18 @@ async fn run_prepared(
     // A task can end on its time limit while an exchange is still running;
     // its outcome line is written before the command returns.
     cloud.exchanges_finished().await;
-    report(ended, &transcript, output, errors)
+    Ok(Finished {
+        ended,
+        transcript: transcript.path().to_path_buf(),
+    })
 }
 
 fn report(
-    ended: Ended,
-    transcript: &Transcript,
+    finished: Finished,
     output: &mut dyn Write,
     errors: &mut dyn Write,
 ) -> Result<Exit, CommandError> {
+    let Finished { ended, transcript } = finished;
     let print_failed =
         |error: std::io::Error| CommandError::failed(format!("writing the result failed: {error}"));
     let exit = match ended {
@@ -211,7 +230,7 @@ fn report(
             Exit::NoAnswer
         }
     };
-    writeln!(errors, "transcript: {}", transcript.path().display()).map_err(print_failed)?;
+    writeln!(errors, "transcript: {}", transcript.display()).map_err(print_failed)?;
     Ok(exit)
 }
 
