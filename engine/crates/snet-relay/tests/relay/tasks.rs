@@ -1,7 +1,9 @@
 use serde_json::json;
 use snet_protocol::FailureKind;
 
-use crate::support::{Cloud, Local, Rig, checked, screened, task};
+use snet_relay::Route;
+
+use crate::support::{Cloud, Local, Rig, answered_locally, checked, screened, task};
 
 const PERSON: &str = "Ayşe Demir";
 const COMPANY: &str = "Kaya Lojistik";
@@ -32,8 +34,12 @@ async fn the_local_model_screens_and_only_its_question_reaches_the_cloud() {
         format!("Ask {COMPANY} for a shorter term; three years is long.")
     );
     assert_eq!(
-        answer.sent_question,
-        "Is a 3-year exclusivity clause from ⟦ORGANISATION_1⟧ normal for an employee?"
+        answer.route,
+        Route::Cloud {
+            sent_question:
+                "Is a 3-year exclusivity clause from ⟦ORGANISATION_1⟧ normal for an employee?"
+                    .to_string()
+        }
     );
     assert_eq!(answer.local_tokens, 680);
     let local = rig.local_bodies();
@@ -228,12 +234,36 @@ async fn the_check_pass_catches_a_name_the_first_pass_kept() {
         "{cloud}"
     );
     assert_eq!(
-        answer.sent_question,
-        "My doctor Dr. ⟦PERSON_1⟧ says my LDL is 190. Should I worry?"
+        answer.route,
+        Route::Cloud {
+            sent_question: "My doctor Dr. ⟦PERSON_1⟧ says my LDL is 190. Should I worry?"
+                .to_string()
+        }
     );
     assert_eq!(
         answer.text.as_str(),
         "190 is high; ask Okan Yilmaz about treatment."
     );
     assert!(rig.local_bodies()[1].contains("Okan Yilmaz"));
+}
+
+#[tokio::test]
+async fn a_question_the_local_model_answers_never_reaches_the_cloud() {
+    let rig = Rig::start(
+        Vec::new(),
+        vec![answered_locally("Hi! What would you like to know?")],
+    )
+    .await;
+    let answer = rig.relay().run(&task("hi", &[], 30)).await.unwrap();
+    assert_eq!(answer.text.as_str(), "Hi! What would you like to know?");
+    assert_eq!(answer.route, Route::Local);
+    assert_eq!(answer.charge.requests, 0);
+    assert_eq!(answer.local_tokens, 340);
+    assert!(rig.cloud_bodies().is_empty());
+    assert_eq!(rig.local_bodies().len(), 1);
+    assert_eq!(
+        rig.kinds(),
+        vec!["relay_started", "local_exchange", "task_ended"]
+    );
+    assert_eq!(rig.records()[2]["outcome"], "answer");
 }

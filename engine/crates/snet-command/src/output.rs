@@ -28,6 +28,14 @@ pub fn answer_lines(text: &str, citations: &[CitedPassage]) -> Vec<String> {
     lines
 }
 
+/// What to do about a failure, when there is one thing to do: a local reply
+/// off the protocol's format usually means the local model is too small.
+pub fn failure_advice(error: &snet_protocol::ProtocolError) -> Option<&'static str> {
+    (error.kind == snet_protocol::FailureKind::InvalidLocalReply).then_some(
+        "the local model's reply did not fit the format; a larger local model such as qwen3:4b follows it reliably",
+    )
+}
+
 pub fn spending_line(spending: &Spending) -> String {
     let charge = spending.charge;
     format!(

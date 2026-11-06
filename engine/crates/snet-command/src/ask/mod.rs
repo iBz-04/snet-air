@@ -7,7 +7,7 @@ use snet_fanout::{FanOut, FanOutOutcome, FanOutTask};
 use snet_local::LocalModel;
 use snet_protocol::{CitedPassage, Document, ProtocolError};
 use snet_pseudonym::{Policy, Restored};
-use snet_relay::{EarlierExchange, Relay, RelayTask};
+use snet_relay::{EarlierExchange, Relay, RelayTask, Route};
 use snet_transcript::Transcript;
 
 use crate::arguments::AskArguments;
@@ -23,9 +23,9 @@ pub(crate) enum Ended {
         text: Restored,
         citations: Vec<CitedPassage>,
         spending: Spending,
-        /// For a question without files: the question the local model
-        /// wrote, as the cloud model read it.
-        sent_question: Option<String>,
+        /// For a question without files: which model answered, and what
+        /// the cloud read when it did.
+        route: Option<Route>,
     },
     NotFound {
         text: Restored,
@@ -155,7 +155,7 @@ pub(crate) async fn execute(
                     charge: answer.charge,
                     local_tokens: answer.local_tokens,
                 },
-                sent_question: Some(answer.sent_question),
+                route: Some(answer.route),
             },
             Err(error) => Ended::Failed(error),
         }
@@ -186,7 +186,7 @@ pub(crate) async fn execute(
                         text,
                         citations,
                         spending,
-                        sent_question: None,
+                        route: None,
                     },
                     FanOutOutcome::NotFound { text } => Ended::NotFound { text, spending },
                 }
@@ -220,7 +220,7 @@ pub(crate) async fn execute(
                         text,
                         citations,
                         spending,
-                        sent_question: None,
+                        route: None,
                     },
                     ConversationOutcome::NotFound { text } => Ended::NotFound { text, spending },
                 }
@@ -250,13 +250,20 @@ fn report(
             text,
             citations,
             spending,
-            sent_question,
+            route,
         } => {
             for line in output::answer_lines(text.as_str(), &citations) {
                 writeln!(output, "{line}").map_err(print_failed)?;
             }
-            if let Some(sent) = sent_question {
-                writeln!(errors, "sent to the cloud: {sent}").map_err(print_failed)?;
+            match route {
+                Some(Route::Local) => {
+                    writeln!(errors, "answered by the local model; nothing was sent")
+                        .map_err(print_failed)?;
+                }
+                Some(Route::Cloud { sent_question }) => {
+                    writeln!(errors, "sent to the cloud: {sent_question}").map_err(print_failed)?;
+                }
+                None => {}
             }
             writeln!(errors, "{}", output::spending_line(&spending)).map_err(print_failed)?;
             Exit::Success
@@ -269,6 +276,9 @@ fn report(
         }
         Ended::Failed(error) => {
             writeln!(errors, "snet: {error}").map_err(print_failed)?;
+            if let Some(advice) = output::failure_advice(&error) {
+                writeln!(errors, "{advice}").map_err(print_failed)?;
+            }
             Exit::NoAnswer
         }
     };

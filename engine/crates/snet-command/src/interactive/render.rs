@@ -35,6 +35,14 @@ pub fn sent(question: &str) -> Vec<String> {
     )]
 }
 
+/// Said when the local model answered and nothing was sent.
+pub fn answered_locally() -> Vec<String> {
+    vec![format!(
+        "  {}",
+        dim().apply_to("⌂ answered on your machine · nothing sent to the cloud")
+    )]
+}
+
 pub fn not_found(text: &str) -> Vec<String> {
     let mut lines = bulleted(
         &Style::new().yellow().bold(),

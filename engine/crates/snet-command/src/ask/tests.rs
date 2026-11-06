@@ -300,7 +300,7 @@ async fn a_question_without_files_goes_through_both_models() {
         false,
         vec![json!({"answer": "Slow start doubles the window each round trip."})],
         Ollama::AnswersInTurn(vec![
-            json!({"cloud_question": "What is TCP slow start?", "private_terms": []}),
+            json!({"local_answer": "", "cloud_question": "What is TCP slow start?", "private_terms": []}),
             json!({"private_terms": []}),
         ]),
     )
@@ -333,5 +333,34 @@ async fn a_question_without_files_needs_the_local_model() {
     let result = run_with_files(false, vec![json!({"answer": "unused"})], Ollama::Down).await;
     let error = result.exit.unwrap_err();
     assert_eq!(error.exit, Exit::Configuration);
+    assert!(result.cloud_bodies.is_empty());
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn a_greeting_is_answered_locally_and_nothing_is_sent() {
+    let result = run_with_files(
+        false,
+        Vec::new(),
+        Ollama::AnswersInTurn(vec![json!({
+                "local_answer": "Hi! What would you like to know?",
+            "cloud_question": "",
+            "private_terms": []
+        })]),
+    )
+    .await;
+    assert_eq!(result.exit, Ok(Exit::Success));
+    assert_eq!(result.output, "Hi! What would you like to know?\n");
+    assert!(
+        result
+            .errors
+            .contains("answered by the local model; nothing was sent"),
+        "{}",
+        result.errors
+    );
+    assert!(
+        result.errors.contains("cloud requests 0"),
+        "{}",
+        result.errors
+    );
     assert!(result.cloud_bodies.is_empty());
 }

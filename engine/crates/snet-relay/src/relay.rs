@@ -13,7 +13,7 @@ use snet_transcript::Transcript;
 
 use crate::log;
 use crate::prompts::CLOUD_PROMPT;
-use crate::screen;
+use crate::screen::{self, Screened};
 
 /// How many earlier exchanges of a session go to the local model with a
 /// new question.
@@ -54,13 +54,21 @@ impl std::fmt::Debug for RelayTask {
     }
 }
 
+/// Which model answered.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum Route {
+    /// The local model answered; nothing left the machine.
+    Local,
+    /// The cloud model answered this question, exactly as it read it,
+    /// pseudonyms included, so the person can see what left the machine.
+    Cloud { sent_question: String },
+}
+
 #[derive(Debug)]
 pub struct RelayAnswer {
     pub task_id: String,
     pub text: Restored,
-    /// The question exactly as the cloud model read it, pseudonyms
-    /// included, so the person can see what left the machine.
-    pub sent_question: String,
+    pub route: Route,
     pub charge: Charge,
     pub local_tokens: u64,
     pub task_end_line: u64,
@@ -80,7 +88,7 @@ pub struct Relay<'a> {
 /// What the cloud step gives back on success.
 struct Answered {
     text: Restored,
-    sent_question: String,
+    route: Route,
 }
 
 impl Relay<'_> {
@@ -139,22 +147,38 @@ impl Relay<'_> {
                 screen::screened,
             )
             .await?;
+        let (cloud_question, private_terms) = match screened {
+            Screened::Local { answer } => {
+                // An empty mapping restores text without placeholders as it
+                // is, and refuses one that holds a placeholder.
+                let text = TaskMapping::new().restore(&answer).map_err(|error| {
+                    ProtocolError::new(FailureKind::InvalidLocalReply, error.to_string())
+                })?;
+                return Ok(Answered {
+                    text,
+                    route: Route::Local,
+                });
+            }
+            Screened::Cloud {
+                cloud_question,
+                private_terms,
+            } => (cloud_question, private_terms),
+        };
         // A second pass over the question about to leave: the local model
         // lists any private detail its first pass kept, so privacy does not
         // rest on one reply of a small model.
-        let check_request =
-            screen::check_request(&screened.cloud_question, task.local_output_tokens)?;
+        let check_request = screen::check_request(&cloud_question, task.local_output_tokens)?;
         let (_check, missed) = self
             .local_step(
                 task,
                 2,
-                &screened.cloud_question,
+                &cloud_question,
                 &check_request,
                 local_tokens,
                 screen::private_terms,
             )
             .await?;
-        let mut terms = screened.private_terms;
+        let mut terms = private_terms;
         terms.extend(missed);
 
         let task_policy = self.policy.with_task_terms(&terms).map_err(|error| {
@@ -165,7 +189,7 @@ impl Relay<'_> {
         let pseudonymiser = task_policy.for_destination(destination);
         let mut mapping = TaskMapping::new();
         let question = pseudonymiser
-            .text(&mut mapping, &screened.cloud_question)
+            .text(&mut mapping, &cloud_question)
             .map_err(|error| {
                 ProtocolError::new(FailureKind::Pseudonymisation, error.to_string())
             })?;
@@ -183,7 +207,7 @@ impl Relay<'_> {
             .await?;
         Ok(Answered {
             text,
-            sent_question,
+            route: Route::Cloud { sent_question },
         })
     }
 
@@ -316,7 +340,7 @@ impl Relay<'_> {
         Ok(RelayAnswer {
             task_id: task.task_id.clone(),
             text: answered.text,
-            sent_question: answered.sent_question,
+            route: answered.route,
             charge,
             local_tokens,
             task_end_line,

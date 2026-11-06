@@ -22,12 +22,19 @@ pub(crate) const CATEGORIES: [&str; 6] = [
     "OTHER",
 ];
 
-/// What the local model made of the question: the one question the cloud
-/// may read, and the private details to replace in it.
-pub(crate) struct Screened {
-    pub(crate) cloud_question: String,
-    /// Category and text of each private detail, trimmed.
-    pub(crate) private_terms: Vec<(String, String)>,
+const MAX_LOCAL_ANSWER_CHARACTERS: usize = 32_000;
+
+/// What the local model made of the question: its own answer, or the one
+/// question the cloud may read and the private details to replace in it.
+pub(crate) enum Screened {
+    Local {
+        answer: String,
+    },
+    Cloud {
+        cloud_question: String,
+        /// Category and text of each private detail, trimmed.
+        private_terms: Vec<(String, String)>,
+    },
 }
 
 fn terms_schema() -> serde_json::Value {
@@ -77,10 +84,11 @@ pub(crate) fn request(task: &RelayTask) -> Result<LocalRequest, ProtocolError> {
     let schema = json!({
         "type": "object",
         "properties": {
+            "local_answer": {"type": "string"},
             "cloud_question": {"type": "string"},
             "private_terms": terms_schema()
         },
-        "required": ["cloud_question", "private_terms"],
+        "required": ["local_answer", "cloud_question", "private_terms"],
         "additionalProperties": false
     });
     local_request(
@@ -113,23 +121,39 @@ pub(crate) fn check_request(
     )
 }
 
-/// Checks the local screening reply.
+/// Checks the local screening reply. Exactly one of `local_answer` and
+/// `cloud_question` is filled, and that one is the route: a local answer,
+/// or a cloud question with its private details.
 pub(crate) fn screened(object: &JsonObject) -> Result<Screened, ProtocolError> {
     let invalid = |detail: &str| ProtocolError::new(FailureKind::InvalidLocalReply, detail);
-    let Some(JsonValue::String(cloud_question)) = object.get("cloud_question") else {
-        return Err(invalid("the reply has no string `cloud_question`"));
+    let text_of = |field: &str| match object.get(field) {
+        Some(JsonValue::String(text)) => Ok(text.trim()),
+        _ => Err(invalid("the reply lacks a string field of its schema")),
     };
-    let cloud_question = cloud_question.trim();
-    let characters = cloud_question.chars().count();
-    if characters == 0 || characters > MAX_CLOUD_QUESTION_CHARACTERS {
-        return Err(invalid(
-            "`cloud_question` is empty or over 1 000 characters",
-        ));
+    let answer = text_of("local_answer")?;
+    let cloud_question = text_of("cloud_question")?;
+    match (answer.is_empty(), cloud_question.is_empty()) {
+        (false, true) => {
+            if answer.chars().count() > MAX_LOCAL_ANSWER_CHARACTERS {
+                return Err(invalid("`local_answer` is over 32 000 characters"));
+            }
+            Ok(Screened::Local {
+                answer: answer.to_string(),
+            })
+        }
+        (true, false) => {
+            if cloud_question.chars().count() > MAX_CLOUD_QUESTION_CHARACTERS {
+                return Err(invalid("`cloud_question` is over 1 000 characters"));
+            }
+            Ok(Screened::Cloud {
+                cloud_question: cloud_question.to_string(),
+                private_terms: private_terms(object)?,
+            })
+        }
+        _ => Err(invalid(
+            "exactly one of `local_answer` and `cloud_question` must be filled",
+        )),
     }
-    Ok(Screened {
-        cloud_question: cloud_question.to_string(),
-        private_terms: private_terms(object)?,
-    })
 }
 
 /// The private details a local reply lists, each trimmed; a detail of
@@ -179,6 +203,7 @@ mod tests {
     #[test]
     fn details_are_trimmed_and_single_characters_left_out() {
         let screened = screened(&object(json!({
+            "local_answer": "",
             "cloud_question": " Should a supplier renegotiate? ",
             "private_terms": [
                 {"category": "PERSON", "text": "\"Ayşe Demir,\""},
@@ -186,20 +211,40 @@ mod tests {
             ]
         })))
         .unwrap();
-        assert_eq!(screened.cloud_question, "Should a supplier renegotiate?");
+        let Screened::Cloud {
+            cloud_question,
+            private_terms,
+        } = screened
+        else {
+            panic!("not routed to the cloud");
+        };
+        assert_eq!(cloud_question, "Should a supplier renegotiate?");
         assert_eq!(
-            screened.private_terms,
+            private_terms,
             vec![("PERSON".to_string(), "Ayşe Demir".to_string())]
         );
     }
 
     #[test]
+    fn a_local_route_carries_the_local_answer() {
+        let screened = screened(&object(json!({
+            "local_answer": "Hi! How can I help?",
+            "cloud_question": "",
+            "private_terms": []
+        })))
+        .unwrap();
+        assert!(matches!(screened, Screened::Local { answer } if answer == "Hi! How can I help?"));
+    }
+
+    #[test]
     fn replies_off_the_rules_are_refused() {
         for reply in [
-            json!({"cloud_question": "", "private_terms": []}),
-            json!({"cloud_question": "q".repeat(1_001), "private_terms": []}),
-            json!({"cloud_question": "Why?", "private_terms": [{"category": "NAME", "text": "Jo"}]}),
-            json!({"cloud_question": "Why?"}),
+            json!({"local_answer": "", "cloud_question": "", "private_terms": []}),
+            json!({"local_answer": "a", "cloud_question": "b", "private_terms": []}),
+            json!({"local_answer": "", "cloud_question": "q".repeat(1_001), "private_terms": []}),
+            json!({"local_answer": "", "cloud_question": "Why?", "private_terms": [{"category": "NAME", "text": "Jo"}]}),
+            json!({"local_answer": "", "cloud_question": "Why?"}),
+            json!({"local_answer": " ", "cloud_question": " ", "private_terms": []}),
         ] {
             let error = screened(&object(reply)).err().unwrap();
             assert_eq!(error.kind, FailureKind::InvalidLocalReply);

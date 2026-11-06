@@ -17,7 +17,7 @@ use console::Term;
 use dialoguer::{BasicHistory, Input};
 use indicatif::{ProgressBar, ProgressStyle};
 use snet_local::LocalModel;
-use snet_relay::{EarlierExchange, MAX_EARLIER_EXCHANGES};
+use snet_relay::{EarlierExchange, MAX_EARLIER_EXCHANGES, Route};
 
 use crate::arguments::AskArguments;
 use crate::ask::{self, Ended, Finished};
@@ -209,7 +209,7 @@ fn answer(
         }
     };
     let message = if direct {
-        "Thinking: the local model screens, the cloud model answers"
+        "Thinking: the local model reads it first"
     } else {
         "Thinking: the local model reads, the cloud model plans"
     };
@@ -237,12 +237,13 @@ fn answer(
                     text,
                     citations,
                     spending,
-                    sent_question,
+                    route,
                 } => {
-                    let mut lines = Vec::new();
-                    if let Some(sent) = sent_question {
-                        lines.extend(render::sent(sent));
-                    }
+                    let mut lines = match route {
+                        Some(Route::Local) => render::answered_locally(),
+                        Some(Route::Cloud { sent_question }) => render::sent(sent_question),
+                        None => Vec::new(),
+                    };
                     lines.extend(render::answer(text.as_str(), citations));
                     lines.extend(render::footer(Some(spending), &transcript));
                     lines
@@ -254,6 +255,9 @@ fn answer(
                 }
                 Ended::Failed(error) => {
                     let mut lines = render::failure(&error.to_string());
+                    if let Some(advice) = crate::output::failure_advice(error) {
+                        lines.push(format!("  {}", dim().apply_to(advice)));
+                    }
                     lines.extend(render::footer(None, &transcript));
                     lines
                 }
