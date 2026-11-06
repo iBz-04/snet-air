@@ -7,55 +7,55 @@
 </p>
 
 <div align="center">
-<p><b>A local model reads your files. A cloud model does the thinking. Your files stay on your machine.</b></p>
+<p><b>Two models, one answer. Your data stays yours.</b></p>
 </div>
 
-## Quick start
+snet pairs a small model on your computer with a large model in the cloud. The local model reads everything first. It answers what it can on its own; for the rest, it removes anything private and hands the cloud only the short question that's left. Your files never leave your machine, and the cloud reads far fewer tokens.
 
-Needs [Rust](https://rustup.rs), a cloud API key and a local model.
-
-**1. Install** with [Ollama](https://ollama.com):
+## Get started
 
 ```bash
-cargo install --locked --git https://github.com/iBz-04/snet-air snet-command
-ollama pull qwen3:4b
+curl -fsSL https://github.com/iBz-04/snet-air/raw/main/install.sh | sh
+snet pull
+snet
 ```
 
-or with quaynor (no server):
+Set `ANTHROPIC_API_KEY` first, or paste your key when snet asks.
 
-```bash
-cargo install --locked --git https://github.com/iBz-04/snet-air snet-command --features gguf
-curl -L -o qwen3-4b.gguf https://huggingface.co/bartowski/Qwen_Qwen3-4B-GGUF/resolve/main/Qwen_Qwen3-4B-Q4_K_M.gguf
+## Why snet
+
+**Private.** Your words reach the cloud only after your own computer has removed what identifies you. Your files never do.
+
+**Lean.** Hellos and simple questions never leave your machine. Hard ones reach the cloud short, so they cost less.
+
+**Open.** `/details` shows exactly what the cloud read. Every request is logged on your machine in `~/.snet/transcripts`.
+
+## Ask about your files
+
 ```
-
-**2. Run `snet`.** It asks for your cloud, key and local model, then takes questions. Ask anything; the local model screens every question, and reads any file you attach with `@`:
-
-```
-❯ What is TCP slow start?
 ❯ Who signed the contract? @contract.txt
 ```
 
-For scripts: `snet ask "What is TCP slow start?"` or `snet ask "Who signed the contract?" contract.txt`
+Only your computer reads the file. The answer cites the lines it rests on.
 
-| Cloud | Flag | Key |
-|---|---|---|
-| Anthropic (default) | `--cloud anthropic:<model>` | `ANTHROPIC_API_KEY` |
-| Melious | `--cloud melious:<model>` | `MELIOUS_API_KEY` |
-| OpenAI | `--cloud openai:<model>` | `OPENAI_API_KEY` |
-| Any OpenAI-compatible server | `--cloud openai-compatible:<model> --cloud-url <url>` | `SNET_CLOUD_API_KEY` |
+## Choose your models
 
-| Option | Use |
+| Local | |
 |---|---|
-| `--fanout` | Large files |
-| `--help` | All options |
+| `snet pull` | qwen3:4b, the default · 2.5 GB |
+| `snet pull qwen3:8b` | sharper · 5 GB |
 
-## Privacy
+| Cloud | Key |
+|---|---|
+| Anthropic (default) | `ANTHROPIC_API_KEY` |
+| Melious | `MELIOUS_API_KEY` |
+| OpenAI | `OPENAI_API_KEY` |
 
-- Every question goes through the local model first. Your files are read only by it.
-- For a question without files, the local model removes private details (names, companies, addresses, IDs) and condenses it; the cloud only sees that short question, and `snet` shows you exactly what was sent.
-- Personal data is pseudonymised before anything is sent.
-- Everything sent is logged in `~/.snet/transcripts/`.
+Already use Ollama? Skip `snet pull`; snet offers your Ollama models.
 
-## Licence
+## More
+
+- Scripts: `snet ask "What is TCP slow start?"` · all options: `snet ask --help`
+- Windows: [download from Releases](https://github.com/iBz-04/snet-air/releases). Linux needs Vulkan drivers.
 
 MPL-2.0
