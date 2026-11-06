@@ -1,26 +1,19 @@
 use std::sync::Mutex;
 
 use snet_cloud::{CloudRequest, CloudTurn, OutboundText, TaskBudget};
-use snet_protocol::{
-    Citations, CitedPassage, FailureKind, MAX_CORRECTIONS, ProtocolError, append, correction,
-};
+use snet_protocol::{Citations, FailureKind, MAX_CORRECTIONS, ProtocolError, append, correction};
 use snet_pseudonym::{Pseudonymiser, TaskMapping};
 use snet_transcript::{ChunkRunLine, QuoteLine, TaskRecord, Transcript};
 
 use crate::fanout::{FanOut, FanOutOutcome};
 use crate::filter::{ChunkOutcome, FilterState, filter_round};
 use crate::log::{JobRuns, job_record};
-use crate::messages::{self, Step, cloud_step, local_request};
-use crate::plan::{Material, PlannedJob, check_citations, check_step, plan_jobs};
+use crate::messages::{self, local_request};
+use crate::plan::{Material, PlannedJob};
 use crate::prompts::CLOUD_PROMPT;
 use crate::run::{Slot, run_round};
+use crate::step::{Checked, checked_step};
 use crate::task::FanOutTask;
-
-/// A cloud step that kept every rule.
-enum Checked {
-    Ended(FanOutOutcome),
-    Plan(Vec<PlannedJob>),
-}
 
 fn invalid(detail: impl Into<String>) -> ProtocolError {
     ProtocolError::new(FailureKind::InvalidCloudReply, detail)
@@ -117,7 +110,8 @@ impl RoundState {
                 .await
                 .map_err(|error| ProtocolError::new(FailureKind::Cloud, error.to_string()))?;
             self.cloud_requests += 1;
-            let checked = self.checked_step(&reply.object, last, &inputs);
+            let checked =
+                checked_step(&reply.object, last, &inputs, &self.mapping, &self.citations);
             let jobs = match checked {
                 Ok(Checked::Ended(outcome)) => return Ok(outcome),
                 Ok(Checked::Plan(jobs)) => jobs,
@@ -144,60 +138,6 @@ impl RoundState {
             request_number += 1;
         }
         Err(invalid("the requests ended without an answer"))
-    }
-
-    /// Every rule a cloud step must keep: an ending with its citations, or a
-    /// plan whose jobs can run.
-    fn checked_step(
-        &self,
-        object: &snet_cloud::JsonObject,
-        last: bool,
-        inputs: &RunInputs<'_>,
-    ) -> Result<Checked, ProtocolError> {
-        let RunInputs {
-            fan_out,
-            task,
-            pseudonymiser,
-            material,
-            longest_chunk,
-            ..
-        } = inputs;
-        let step = cloud_step(object)
-            .ok_or_else(|| invalid("the reply's parts do not match the request's schema"))?;
-        check_step(&step)?;
-        let text = self
-            .mapping
-            .restore(&step.text)
-            .map_err(|error| invalid(error.to_string()))?;
-        match step.step {
-            Step::Answer => {
-                check_citations(&step, &self.citations)?;
-                let citations = step
-                    .citations
-                    .iter()
-                    .filter_map(|name| self.citations.find(name))
-                    .map(|cited| CitedPassage {
-                        citation: format!("C{}", cited.number),
-                        document: task.documents[cited.document].name.clone(),
-                        range: cited.range.clone(),
-                        text: cited.text.clone(),
-                    })
-                    .collect();
-                Ok(Checked::Ended(FanOutOutcome::Answer { text, citations }))
-            }
-            Step::NotFound => Ok(Checked::Ended(FanOutOutcome::NotFound { text })),
-            Step::Plan if last => Err(invalid("the last request planned again")),
-            Step::Plan => plan_jobs(
-                &step,
-                &self.mapping,
-                pseudonymiser,
-                material,
-                longest_chunk,
-                fan_out.local,
-                task.limits.local_output_tokens,
-            )
-            .map(Checked::Plan),
-        }
     }
 
     /// Runs, filters and logs one plan.

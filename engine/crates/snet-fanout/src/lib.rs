@@ -11,6 +11,7 @@ mod plan;
 mod prompts;
 mod rounds;
 mod run;
+mod step;
 mod task;
 
 pub use fanout::{FanOut, FanOutAnswer, FanOutOutcome};
