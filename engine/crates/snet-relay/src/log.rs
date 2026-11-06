@@ -4,7 +4,7 @@ use snet_protocol::{FailureKind, ProtocolError, hex, now_milliseconds};
 use snet_transcript::{LocalExchangeLine, RelayStartedLine, TaskRecord, Transcript};
 
 use crate::prompts::{CLOUD_PROMPT, LOCAL_PROMPT, digest};
-use crate::relay::RelayTask;
+use crate::task::RelayTask;
 
 pub(crate) fn started(
     cloud: &CloudClient<Transcript>,

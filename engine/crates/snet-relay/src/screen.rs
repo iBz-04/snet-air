@@ -5,7 +5,7 @@ use snet_local::{
 use snet_protocol::{FailureKind, ProtocolError};
 
 use crate::prompts::LOCAL_PROMPT;
-use crate::relay::RelayTask;
+use crate::task::RelayTask;
 
 const SCHEMA_NAME: &str = "screened_question";
 const CHECK_SCHEMA_NAME: &str = "checked_question";
