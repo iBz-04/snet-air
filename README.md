@@ -28,6 +28,17 @@ cargo install --locked --git https://github.com/iBz-04/snet-air snet-command
 
 You also need [Ollama](https://ollama.com) running on this machine with a model pulled, and an API key for a cloud model.
 
+### Without Ollama: a GGUF file in this process
+
+Build with the `gguf` feature and `snet` runs a GGUF model itself through the [quaynor](https://github.com/iBz-04/quaynor) engine, with no server:
+
+```bash
+cargo install --locked --git https://github.com/iBz-04/snet-air snet-command --features gguf
+snet ask --local gguf:./Qwen_Qwen3-4B-Q4_K_M.gguf "Who signed the contract and when?" contract.txt
+```
+
+This builds llama.cpp, so it needs CMake and a C++ compiler (and the Vulkan SDK on Linux and Windows). The local model's answers are forced into the expected JSON shape by a grammar, and the file's SHA-256 is recorded as the model's identity. Download GGUF files yourself; `snet` fetches nothing.
+
 ## How it works
 
 `snet ask` runs one of two protocols:
@@ -51,7 +62,7 @@ The inner seal of pump 3 was replaced on day 7.
 - A local report that copies a quote or spells out a protected value is refused, not sent.
 - Every request is written to a transcript before it is sent, exactly as sent and without the API key: `~/.snet/transcripts/<task>.jsonl`. Its path is printed after each answer. The pseudonym mapping is never written there.
 - The cloud's replies are checked against a strict schema. They are data, never code: nothing the cloud writes is run, opened or fetched.
-- The local model must run on this machine. `snet` refuses an `OLLAMA_HOST` that points anywhere else.
+- The local model must run on this machine: in this process from a GGUF file, or in Ollama, and `snet` refuses an `OLLAMA_HOST` that points anywhere else.
 - No telemetry and no update checks.
 
 ## Options
@@ -62,7 +73,8 @@ snet ask [options] <question> <file>...
   --fanout                  split large files into chunks and run small jobs on each
   --cloud <provider:model>  anthropic:<model>, openai:<model> or openai-compatible:<model>
   --cloud-url <url>         the https URL of an openai-compatible server
-  --local <ollama:model>    the local model (default ollama:qwen3:4b)
+  --local <ollama:model>    the local model (default ollama:qwen3:4b),
+          <gguf:file>       or a GGUF file run in this process (needs --features gguf)
   --context <tokens>        the local model's context window (default 8192)
   --effort <level>          how hard the cloud model thinks (default low)
   --rounds <n>              conversation rounds, 2 to 8 (default 4)
@@ -75,7 +87,7 @@ snet ask [options] <question> <file>...
 | `ANTHROPIC_API_KEY`, `OPENAI_API_KEY`, `SNET_CLOUD_API_KEY` | The key for `anthropic`, `openai` or `openai-compatible` |
 | `SNET_CLOUD` | The default cloud model, such as `openai:gpt-x` (default `anthropic:claude-sonnet-5-5`) |
 | `SNET_CLOUD_URL` | The URL of an `openai-compatible` server |
-| `SNET_LOCAL` | The default local model, such as `ollama:llama3.2:3b` |
+| `SNET_LOCAL` | The default local model, such as `ollama:llama3.2:3b` or `gguf:/models/small.gguf` |
 | `OLLAMA_HOST` | Where Ollama listens (default `127.0.0.1:11434`) |
 | `SNET_HOME` | Where transcripts go (default `~/.snet`) |
 
@@ -115,7 +127,7 @@ cargo clippy --workspace --all-targets -- -D warnings
 cargo run -p snet-rules -- ..
 ```
 
-The tests that need a real Ollama or cloud key are ignored by default. Run them with `cargo test -- --ignored`.
+The tests that need a real Ollama or cloud key are ignored by default. Run them with `cargo test -- --ignored`. The GGUF backend builds and tests with `--features gguf`; its live test reads the model path from `SNET_LIVE_GGUF`.
 
 | Crate | Role |
 |---|---|
@@ -124,7 +136,7 @@ The tests that need a real Ollama or cloud key are ignored by default. Run them 
 | `snet-fanout` | The fan-out protocol |
 | `snet-protocol` | What the two protocols share |
 | `snet-cloud` | One recorded, budgeted, schema-checked request to a cloud model |
-| `snet-local` | The local model through Ollama |
+| `snet-local` | The local model, through Ollama or quaynor |
 | `snet-pseudonym` | Pseudonymisation and restoration |
 | `snet-transcript` | The per-task transcript |
 | `snet-wire` | Shared HTTP and JSON pieces |

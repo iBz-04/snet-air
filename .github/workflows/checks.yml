@@ -44,6 +44,22 @@ jobs:
       - name: Project rules
         run: cargo run -p snet-rules -- ..
 
+  gguf:
+    runs-on: macos-latest
+    defaults:
+      run:
+        working-directory: engine
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Install the pinned toolchain
+        run: rustup toolchain install
+      - name: Clippy with the GGUF backend
+        run: cargo clippy --workspace --all-targets --features snet-command/gguf -- -D warnings
+      - name: Tests with the GGUF backend
+        run: cargo test --workspace --features snet-command/gguf --no-fail-fast
+
   supply-chain:
     runs-on: ubuntu-latest
     defaults:
