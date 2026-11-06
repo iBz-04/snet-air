@@ -8,5 +8,7 @@ mod prompts;
 mod relay;
 mod screen;
 
-pub use prompts::{CHECK_PROMPT, CLOUD_PROMPT, LOCAL_PROMPT};
-pub use relay::{EarlierExchange, MAX_EARLIER_EXCHANGES, Relay, RelayAnswer, RelayTask, Route};
+pub use prompts::{CLOUD_PROMPT, LOCAL_PROMPT};
+pub use relay::{
+    EarlierExchange, MAX_EARLIER_EXCHANGES, Relay, RelayAnswer, RelayTask, Route, prime,
+};

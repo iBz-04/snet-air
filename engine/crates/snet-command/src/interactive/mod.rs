@@ -13,7 +13,7 @@ use std::io::ErrorKind;
 use std::path::Path;
 use std::time::Duration;
 
-use console::Term;
+use console::{Style, Term};
 use dialoguer::{BasicHistory, Input};
 use indicatif::{ProgressBar, ProgressStyle};
 use snet_local::LocalModel;
@@ -37,8 +37,11 @@ struct Session {
     local: String,
     files: Vec<String>,
     fanout: bool,
-    /// The direct questions answered so far, oldest first, sent as context.
+    /// The questions without files answered so far, oldest first, which
+    /// the local model reads as context.
     earlier: Vec<EarlierExchange>,
+    /// What `/details` shows about the last answer.
+    details: Vec<String>,
 }
 
 impl Session {
@@ -59,6 +62,20 @@ impl Session {
         if self.earlier.len() > MAX_EARLIER_EXCHANGES {
             self.earlier.remove(0);
         }
+    }
+
+    /// The local model's name, without its `ollama:` or `gguf:` prefix.
+    fn local_model_name(&self) -> &str {
+        self.local
+            .split_once(':')
+            .map_or(self.local.as_str(), |(_, name)| name)
+    }
+
+    /// The cloud model's name, without its provider prefix.
+    fn cloud_model_name(&self) -> &str {
+        self.cloud
+            .split_once(':')
+            .map_or(self.cloud.as_str(), |(_, name)| name)
     }
 
     fn mode(&self) -> &'static str {
@@ -106,11 +123,14 @@ pub fn run(environment: &dyn Environment) -> Result<Exit, CommandError> {
         files: Vec::new(),
         fanout: false,
         earlier: Vec::new(),
+        details: Vec::new(),
     };
     let local = ready_local(&session, &overlay, &runtime)?;
     println!();
-    print_status(&session);
-    print_lines(&help_lines());
+    println!(
+        "  {}",
+        dim().apply_to("Ask anything. Attach files with @file. /help for more.")
+    );
     println!();
 
     let questions = theme::question_prompt();
@@ -135,7 +155,13 @@ pub fn run(environment: &dyn Environment) -> Result<Exit, CommandError> {
         match prompt::parse(&line) {
             Line::Empty => {}
             Line::Exit => break,
-            Line::Help => print_lines(&help_lines()),
+            Line::Help => print_lines(&help_lines(&session)),
+            Line::Details => {
+                if session.details.is_empty() {
+                    println!("  {}", dim().apply_to("Nothing answered yet."));
+                }
+                print_lines(&session.details);
+            }
             Line::Files => print_files(&session),
             Line::Clear => {
                 session.files.clear();
@@ -147,17 +173,24 @@ pub fn run(environment: &dyn Environment) -> Result<Exit, CommandError> {
             }
             Line::Fanout => {
                 session.fanout = !session.fanout;
-                print_status(&session);
+                println!(
+                    "  {}",
+                    dim().apply_to(format!("Files are now read in {} mode.", session.mode()))
+                );
             }
             Line::Unknown(command) => print_lines(&render::failure(&format!(
                 "/{command} is not a command; type /help"
             ))),
             Line::Question { text, attach } => {
                 attach_files(&mut session, attach);
-                if !text.is_empty()
-                    && let Some(exchange) = answer(&session, text, &overlay, &local, &runtime)
-                {
-                    session.remember(exchange);
+                if !text.is_empty() {
+                    let (exchange, details) = answer(&session, text, &overlay, &local, &runtime);
+                    if let Some(exchange) = exchange {
+                        session.remember(exchange);
+                    }
+                    if !details.is_empty() {
+                        session.details = details;
+                    }
                 }
             }
         }
@@ -174,99 +207,112 @@ fn ready_local(
     environment: &dyn Environment,
     runtime: &tokio::runtime::Runtime,
 ) -> Result<LocalModel, CommandError> {
-    let local_config = settings::resolve(&session.arguments(String::new()), environment)?.local;
-    let local = LocalModel::new(local_config);
-    let spinner = spinner("Getting the local model ready")?;
-    let ready = runtime.block_on(local.prepare());
+    let settings = settings::resolve(&session.arguments(String::new()), environment)?;
+    let local = LocalModel::new(settings.local.clone());
+    let spinner = spinner("Loading the local model")?;
+    // One screening pass now loads the weights and fills the runtime's
+    // prompt cache, so the first question does not wait for either.
+    let ready = runtime.block_on(async {
+        let listed = local.prepare().await.map_err(|error| error.to_string())?;
+        snet_relay::prime(&local, settings.conversation.local_output_tokens)
+            .await
+            .map_err(|error| error.to_string())?;
+        Ok::<_, String>(listed)
+    });
     spinner.finish_and_clear();
     let listed =
         ready.map_err(|error| CommandError::configuration(format!("the local model: {error}")))?;
     println!(
-        "  {} {}",
-        accent().apply_to("✔"),
-        dim().apply_to(format!("local model {} is ready", listed.name))
+        "{} {}",
+        Style::new().green().apply_to("✔"),
+        dim().apply_to(format!("{} is ready", listed.name))
     );
     Ok(local)
 }
 
-/// Runs one question as `snet ask` would and prints the result. With files
-/// attached the local model reads them; without, it screens and condenses
-/// the question for the cloud model. Returns an exchange without files to
-/// remember; a failure is printed and the session goes on.
+/// Runs one question as `snet ask` would and prints the answer. With files
+/// attached the local model reads them; without, it answers itself or
+/// hands a screened question to the cloud. Returns an exchange without
+/// files to remember and the lines `/details` shows; a failure is printed
+/// and the session goes on.
 fn answer(
     session: &Session,
     question: String,
     environment: &dyn Environment,
     local: &LocalModel,
     runtime: &tokio::runtime::Runtime,
-) -> Option<EarlierExchange> {
+) -> (Option<EarlierExchange>, Vec<String>) {
     let direct = session.files.is_empty();
     let prepared = match ask::prepare(&session.arguments(question.clone()), environment) {
         Ok(prepared) => prepared,
         Err(error) => {
             print_lines(&render::failure(&error.to_string()));
-            return None;
+            return (None, Vec::new());
         }
     };
-    let message = if direct {
-        "Thinking: the local model reads it first"
-    } else {
-        "Thinking: the local model reads, the cloud model plans"
-    };
-    let spinner = match spinner(message) {
+    let spinner = match spinner("Thinking") {
         Ok(spinner) => spinner,
         Err(error) => {
             print_lines(&render::failure(&error.to_string()));
-            return None;
+            return (None, Vec::new());
         }
     };
     let earlier: &[EarlierExchange] = if direct { &session.earlier } else { &[] };
     let finished = runtime.block_on(ask::execute(prepared, local, earlier));
     spinner.finish_and_clear();
+    let Finished { ended, transcript } = match finished {
+        Ok(finished) => finished,
+        Err(error) => {
+            print_lines(&render::failure(&error.to_string()));
+            return (None, Vec::new());
+        }
+    };
+    let local_name = format!("your machine ({})", session.local_model_name());
+    let cloud_name = format!("the cloud ({})", session.cloud_model_name());
     let mut remembered = None;
-    match finished {
-        Ok(Finished { ended, transcript }) => {
-            if let (true, Ended::Answer { text, .. }) = (direct, &ended) {
+    let details = match &ended {
+        Ended::Answer {
+            text,
+            citations,
+            spending,
+            route,
+        } => {
+            if direct {
                 remembered = Some(EarlierExchange {
                     question,
                     answer: text.as_str().to_string(),
                 });
             }
-            let lines = match &ended {
-                Ended::Answer {
-                    text,
-                    citations,
-                    spending,
-                    route,
-                } => {
-                    let mut lines = match route {
-                        Some(Route::Local) => render::answered_locally(),
-                        Some(Route::Cloud { sent_question }) => render::sent(sent_question),
-                        None => Vec::new(),
-                    };
-                    lines.extend(render::answer(text.as_str(), citations));
-                    lines.extend(render::footer(Some(spending), &transcript));
-                    lines
-                }
-                Ended::NotFound { text, spending } => {
-                    let mut lines = render::not_found(text.as_str());
-                    lines.extend(render::footer(Some(spending), &transcript));
-                    lines
-                }
-                Ended::Failed(error) => {
-                    let mut lines = render::failure(&error.to_string());
-                    if let Some(advice) = crate::output::failure_advice(error) {
-                        lines.push(format!("  {}", dim().apply_to(advice)));
-                    }
-                    lines.extend(render::footer(None, &transcript));
-                    lines
-                }
+            let (answerer, answered_by, sent) = match route {
+                Some(Route::Local) => (render::Answerer::Local, local_name, None),
+                Some(Route::Cloud { sent_question }) => (
+                    render::Answerer::Cloud,
+                    cloud_name,
+                    Some(sent_question.as_str()),
+                ),
+                None => (
+                    render::Answerer::Cloud,
+                    format!("{cloud_name}, from what {local_name} read in your files"),
+                    None,
+                ),
             };
-            print_lines(&lines);
+            print_lines(&render::answer(text.as_str(), citations, answerer));
+            render::details(&answered_by, sent, Some(spending), &transcript)
         }
-        Err(error) => print_lines(&render::failure(&error.to_string())),
-    }
-    remembered
+        Ended::NotFound { text, spending } => {
+            print_lines(&render::not_found(text.as_str()));
+            render::details(&cloud_name, None, Some(spending), &transcript)
+        }
+        Ended::Failed(error) => {
+            let mut lines = render::failure(&error.to_string());
+            if let Some(advice) = crate::output::failure_advice(error) {
+                lines.push(format!("  {}", dim().apply_to(advice)));
+            }
+            print_lines(&lines);
+            render::details("nobody: the task failed", None, None, &transcript)
+        }
+    };
+    (remembered, details)
 }
 
 fn attach_files(session: &mut Session, attach: Vec<String>) {
@@ -297,33 +343,33 @@ fn print_files(session: &Session) {
     }
 }
 
-fn print_status(session: &Session) {
-    println!(
-        "  {}",
-        dim().apply_to(format!(
-            "cloud {} · local {} · {}",
-            session.cloud,
-            session.local,
-            session.mode()
-        ))
-    );
-}
-
-fn help_lines() -> Vec<String> {
+fn help_lines(session: &Session) -> Vec<String> {
+    let row = |command: &str, meaning: &str| {
+        format!(
+            "  {} {}",
+            accent().apply_to(format!("{command:<10}")),
+            dim().apply_to(meaning)
+        )
+    };
     vec![
+        row("@file", "attach a file; only your machine reads it"),
+        row(
+            "/details",
+            "who answered the last question, and what the cloud read",
+        ),
+        row("/files", "list attached files"),
+        row("/clear", "detach all files and forget earlier questions"),
+        row("/fanout", "read large files in chunks"),
+        row("/exit", "quit"),
+        String::new(),
         format!(
-            "  {}",
-            dim().apply_to("Ask anything. To ask about your files, attach them with @path:")
+            "  {} answered on your machine   {} answered by the cloud",
+            Style::new().green().apply_to("●"),
+            accent().apply_to("●")
         ),
         format!(
             "  {}",
-            accent().apply_to("❯ Who signed the contract? @contract.txt")
-        ),
-        format!(
-            "  {}",
-            dim().apply_to(
-                "/files list attached · /clear detach all and forget · /fanout large-file mode · /exit quit"
-            )
+            dim().apply_to(format!("local {} · cloud {}", session.local, session.cloud))
         ),
     ]
 }

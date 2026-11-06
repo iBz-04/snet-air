@@ -4,7 +4,7 @@ use snet_local::{
 };
 use snet_protocol::{FailureKind, ProtocolError};
 
-use crate::prompts::{CHECK_PROMPT, LOCAL_PROMPT};
+use crate::prompts::LOCAL_PROMPT;
 use crate::relay::RelayTask;
 
 const SCHEMA_NAME: &str = "screened_question";
@@ -53,7 +53,6 @@ fn terms_schema() -> serde_json::Value {
 }
 
 fn local_request(
-    instructions: &str,
     message: serde_json::Value,
     schema_name: &str,
     schema: serde_json::Value,
@@ -62,7 +61,7 @@ fn local_request(
     let reply_schema = ReplySchema::new(schema_name, schema)
         .map_err(|error| ProtocolError::new(FailureKind::Local, error.to_string()))?;
     Ok(LocalRequest {
-        instructions: instructions.to_string(),
+        instructions: LOCAL_PROMPT.to_string(),
         conversation: vec![ConversationMessage {
             role: ConversationRole::User,
             text: message.to_string(),
@@ -91,13 +90,7 @@ pub(crate) fn request(task: &RelayTask) -> Result<LocalRequest, ProtocolError> {
         "required": ["local_answer", "cloud_question", "private_terms"],
         "additionalProperties": false
     });
-    local_request(
-        LOCAL_PROMPT,
-        message,
-        SCHEMA_NAME,
-        schema,
-        task.local_output_tokens,
-    )
+    local_request(message, SCHEMA_NAME, schema, task.local_output_tokens)
 }
 
 /// The request that asks the local model to list any private detail still
@@ -113,8 +106,7 @@ pub(crate) fn check_request(
         "additionalProperties": false
     });
     local_request(
-        CHECK_PROMPT,
-        json!({"question": cloud_question}),
+        json!({"check": cloud_question}),
         CHECK_SCHEMA_NAME,
         schema,
         max_output_tokens,

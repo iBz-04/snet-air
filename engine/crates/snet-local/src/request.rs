@@ -39,7 +39,13 @@ struct Body<'a> {
     /// Ollama constrains the answer to this JSON schema.
     format: &'a serde_json::Value,
     options: Options,
+    keep_alive: &'static str,
 }
+
+/// How long Ollama keeps the model loaded after a request. Its own default
+/// of five minutes unloads it between questions of a session, and loading
+/// a 4B model takes about ten seconds.
+pub(crate) const KEEP_ALIVE: &str = "30m";
 
 #[derive(Serialize)]
 struct Message<'a> {
@@ -159,6 +165,7 @@ pub(crate) fn build_body(
             num_predict: request.max_output_tokens,
             num_ctx: config.context_tokens,
         },
+        keep_alive: KEEP_ALIVE,
     })
     .map_err(|error| invalid(&error.to_string()))?;
     if body.len() as u64 > config.request_bytes_cap {

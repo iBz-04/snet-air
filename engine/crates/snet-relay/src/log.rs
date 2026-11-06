@@ -3,7 +3,7 @@ use snet_local::{LocalAnswer, LocalModel};
 use snet_protocol::{FailureKind, ProtocolError, hex, now_milliseconds};
 use snet_transcript::{LocalExchangeLine, RelayStartedLine, TaskRecord, Transcript};
 
-use crate::prompts::{CHECK_PROMPT, CLOUD_PROMPT, LOCAL_PROMPT, digest};
+use crate::prompts::{CLOUD_PROMPT, LOCAL_PROMPT, digest};
 use crate::relay::RelayTask;
 
 pub(crate) fn started(
@@ -25,7 +25,6 @@ pub(crate) fn started(
         policy_digest: hex(&policy_digest),
         cloud_prompt_sha256: digest(CLOUD_PROMPT),
         local_prompt_sha256: digest(LOCAL_PROMPT),
-        check_prompt_sha256: digest(CHECK_PROMPT),
         seconds: task.seconds,
         local_output_tokens: task.local_output_tokens,
     }))

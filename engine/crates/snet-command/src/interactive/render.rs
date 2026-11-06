@@ -6,9 +6,25 @@ use snet_protocol::CitedPassage;
 use super::theme::{accent, dim};
 use crate::output::Spending;
 
-/// The answer under a bullet, then each cited passage quoted beneath it.
-pub fn answer(text: &str, citations: &[CitedPassage]) -> Vec<String> {
-    let mut lines = bulleted(&accent(), "⏺", text);
+/// Who answered, shown only as the colour of the answer's dot.
+#[derive(Clone, Copy)]
+pub enum Answerer {
+    Local,
+    Cloud,
+}
+
+impl Answerer {
+    fn dot(self) -> Style {
+        match self {
+            Answerer::Local => Style::new().green(),
+            Answerer::Cloud => accent(),
+        }
+    }
+}
+
+/// The answer after a dot, then each cited passage quoted beneath it.
+pub fn answer(text: &str, citations: &[CitedPassage], answerer: Answerer) -> Vec<String> {
+    let mut lines = bulleted(&answerer.dot(), "●", text);
     for passage in citations {
         lines.push(format!(
             "  {} {} {}",
@@ -26,27 +42,10 @@ pub fn answer(text: &str, citations: &[CitedPassage]) -> Vec<String> {
     lines
 }
 
-/// The question the local model wrote, as the cloud model read it.
-pub fn sent(question: &str) -> Vec<String> {
-    vec![format!(
-        "  {} {}",
-        dim().apply_to("↳ the cloud read:"),
-        dim().apply_to(question)
-    )]
-}
-
-/// Said when the local model answered and nothing was sent.
-pub fn answered_locally() -> Vec<String> {
-    vec![format!(
-        "  {}",
-        dim().apply_to("⌂ answered on your machine · nothing sent to the cloud")
-    )]
-}
-
 pub fn not_found(text: &str) -> Vec<String> {
     let mut lines = bulleted(
-        &Style::new().yellow().bold(),
-        "⏺",
+        &Style::new().yellow(),
+        "●",
         "The files do not hold the answer.",
     );
     lines.extend(
@@ -60,29 +59,36 @@ pub fn failure(message: &str) -> Vec<String> {
     bulleted(&Style::new().red().bold(), "✗", message)
 }
 
-/// What the task spent and where its transcript is, dimmed.
-pub fn footer(spending: Option<&Spending>, transcript: &Path) -> Vec<String> {
-    let mut lines = Vec::new();
+/// What `/details` shows about the last answer: who answered, what the
+/// cloud read, what was spent and where the transcript is.
+pub fn details(
+    answered_by: &str,
+    sent_question: Option<&str>,
+    spending: Option<&Spending>,
+    transcript: &Path,
+) -> Vec<String> {
+    let row = |label: &str, value: String| {
+        format!("  {} {value}", dim().apply_to(format!("{label:<12}")))
+    };
+    let mut lines = vec![row("answered by", answered_by.to_string())];
+    if let Some(question) = sent_question {
+        lines.push(row("cloud read", question.to_string()));
+    }
     if let Some(spending) = spending {
         let charge = spending.charge;
-        lines.push(format!(
-            "  {}",
-            dim().apply_to(format!(
-                "{} {} · {} · {} bytes sent · {} in / {} out cloud tokens · {} local tokens",
-                spending.steps,
-                spending.steps_name,
-                counted(charge.requests, "cloud request"),
+        lines.push(row(
+            "cloud",
+            format!(
+                "{} · {} bytes sent · {} in / {} out tokens",
+                counted(charge.requests, "request"),
                 charge.bytes_sent,
                 charge.input_tokens,
-                charge.output_tokens,
-                spending.local_tokens
-            ))
+                charge.output_tokens
+            ),
         ));
+        lines.push(row("local", format!("{} tokens", spending.local_tokens)));
     }
-    lines.push(format!(
-        "  {}",
-        dim().apply_to(format!("transcript {}", transcript.display()))
-    ));
+    lines.push(row("transcript", transcript.display().to_string()));
     lines
 }
 
@@ -124,6 +130,7 @@ mod tests {
 
     #[test]
     fn the_answer_quotes_each_cited_passage_beneath_it() {
+        let answerer = Answerer::Cloud;
         let citations = vec![CitedPassage {
             citation: "C1".to_string(),
             document: "shift-log.txt".to_string(),
@@ -131,9 +138,13 @@ mod tests {
             text: "Day 7: the inner seal of pump 3 was replaced.".to_string(),
         }];
         assert_eq!(
-            plain(&answer("The seal was replaced.\nOn day 7.", &citations)),
+            plain(&answer(
+                "The seal was replaced.\nOn day 7.",
+                &citations,
+                answerer
+            )),
             vec![
-                "⏺ The seal was replaced.",
+                "● The seal was replaced.",
                 "  On day 7.",
                 "  ⎿ [C1] shift-log.txt · bytes 412..466",
                 "      Day 7: the inner seal of pump 3 was replaced.",
@@ -142,10 +153,18 @@ mod tests {
     }
 
     #[test]
-    fn the_footer_names_the_transcript_even_without_spending() {
+    fn details_name_who_answered_and_where_the_transcript_is() {
         assert_eq!(
-            plain(&footer(None, Path::new("/t/task.jsonl"))),
-            vec!["  transcript /t/task.jsonl"]
+            plain(&details(
+                "your machine (qwen3:4b)",
+                None,
+                None,
+                Path::new("/t/task.jsonl")
+            )),
+            vec![
+                "  answered by  your machine (qwen3:4b)",
+                "  transcript   /t/task.jsonl"
+            ]
         );
     }
 }

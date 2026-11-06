@@ -9,6 +9,7 @@ pub enum Line {
     },
     Help,
     Files,
+    Details,
     Clear,
     Fanout,
     Exit,
@@ -26,6 +27,7 @@ pub fn parse(line: &str) -> Line {
         return match command.trim() {
             "help" | "?" => Line::Help,
             "files" => Line::Files,
+            "details" => Line::Details,
             "clear" => Line::Clear,
             "fanout" => Line::Fanout,
             "exit" | "quit" => Line::Exit,
@@ -89,6 +91,7 @@ mod tests {
         assert_eq!(parse("   "), Line::Empty);
         assert_eq!(parse("/help"), Line::Help);
         assert_eq!(parse("/files"), Line::Files);
+        assert_eq!(parse("/details"), Line::Details);
         assert_eq!(parse("/clear"), Line::Clear);
         assert_eq!(parse("/fanout"), Line::Fanout);
         assert_eq!(parse("/quit"), Line::Exit);

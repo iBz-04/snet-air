@@ -3,7 +3,7 @@ use dialoguer::{Input, Password, Select};
 use snet_cloud::Provider;
 
 use super::overlay::OverlayEnvironment;
-use super::theme::{accent, dim};
+use super::theme::dim;
 use crate::environment::Environment;
 use crate::exit::CommandError;
 use crate::settings::DEFAULT_CLOUD;
@@ -152,11 +152,6 @@ fn ensure_key(
 ) -> Result<(), CommandError> {
     let variable = provider.key_variable();
     if has_value(overlay, variable)? {
-        println!(
-            "  {} {}",
-            accent().apply_to("✔"),
-            dim().apply_to(format!("using {variable} from your environment"))
-        );
         return Ok(());
     }
     let key = Password::with_theme(theme)

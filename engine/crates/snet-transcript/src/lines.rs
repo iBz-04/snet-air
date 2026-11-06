@@ -168,7 +168,6 @@ pub struct RelayStartedLine {
     pub policy_digest: String,
     pub cloud_prompt_sha256: String,
     pub local_prompt_sha256: String,
-    pub check_prompt_sha256: String,
     pub seconds: u64,
     pub local_output_tokens: u64,
 }

@@ -42,6 +42,7 @@ fn the_body_asks_ollama_for_one_schema_bound_answer_without_thinking() {
             ],
             "stream": false,
             "think": false,
+            "keep_alive": "30m",
             "format": schema().as_json(),
             "options": {"temperature": 0, "num_predict": 64, "num_ctx": 8192}
         })

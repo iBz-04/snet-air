@@ -348,6 +348,25 @@ impl Relay<'_> {
     }
 }
 
+/// Runs one screening pass over a greeting and drops its answer, so the
+/// model is loaded and its runtime holds the instructions in its prompt
+/// cache before the person's first question.
+pub async fn prime(local: &LocalModel, local_output_tokens: u64) -> Result<(), ProtocolError> {
+    let task = RelayTask {
+        task_id: "prime".to_string(),
+        question: "hi".to_string(),
+        earlier: Vec::new(),
+        seconds: 60,
+        local_output_tokens,
+    };
+    let request = screen::request(&task)?;
+    local
+        .ask(&request)
+        .await
+        .map(|_answer| ())
+        .map_err(|error| ProtocolError::new(FailureKind::Local, error.to_string()))
+}
+
 fn invalid_reply(detail: impl Into<String>) -> ProtocolError {
     ProtocolError::new(FailureKind::InvalidCloudReply, detail)
 }
