@@ -157,6 +157,22 @@ struct ChatMessage {
     content: String,
 }
 
+/// The model's answer text as a strict JSON object that meets the schema.
+pub(crate) fn parse_answer(text: &str, schema: &ReplySchema) -> Result<JsonObject, LocalError> {
+    let JsonValue::Object(object) = parse_strict(text.as_bytes())
+        .map_err(|reason| LocalError::malformed(format!("the answer: {reason}")))?
+    else {
+        return Err(LocalError::malformed("the answer is not a JSON object"));
+    };
+    schema
+        .check(&object)
+        .map_err(|violation| LocalError::ReplyBreaksSchema {
+            path: violation.path,
+            reason: violation.reason,
+        })?;
+    Ok(object)
+}
+
 pub(crate) fn answer(
     reply: &RawReply,
     model: &ListedModel,
@@ -190,17 +206,7 @@ pub(crate) fn answer(
             "the reply used more tokens than the cap",
         ));
     }
-    let JsonValue::Object(object) = parse_strict(chat.message.content.as_bytes())
-        .map_err(|reason| LocalError::malformed(format!("the answer: {reason}")))?
-    else {
-        return Err(LocalError::malformed("the answer is not a JSON object"));
-    };
-    schema
-        .check(&object)
-        .map_err(|violation| LocalError::ReplyBreaksSchema {
-            path: violation.path,
-            reason: violation.reason,
-        })?;
+    let object = parse_answer(&chat.message.content, schema)?;
     Ok(LocalAnswer {
         object,
         prompt_tokens: chat.prompt_eval_count,

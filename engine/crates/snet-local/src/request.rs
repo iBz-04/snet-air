@@ -62,11 +62,11 @@ fn json_depth(value: &serde_json::Value) -> u64 {
     }
 }
 
-/// The request checks, run before any connection, and the body of
-pub(crate) fn build_body(
+/// The checks every backend runs before the model sees a request.
+pub(crate) fn check_request(
     config: &LocalConfig,
     request: &LocalRequest,
-) -> Result<Vec<u8>, LocalError> {
+) -> Result<(), LocalError> {
     let invalid = |reason: &str| LocalError::RequestInvalid {
         reason: reason.to_string(),
     };
@@ -95,7 +95,7 @@ pub(crate) fn build_body(
             .map(|message| message.text.as_str()),
     );
     let mut prompt_bound = 0u64;
-    for text in texts.clone() {
+    for text in texts {
         if config
             .control_tokens
             .iter()
@@ -122,6 +122,19 @@ pub(crate) fn build_body(
     if json_depth(schema) > config.max_schema_depth {
         return Err(invalid("the schema is deeper than the configured bound"));
     }
+    Ok(())
+}
+
+/// The Ollama chat body of a request that passed `check_request`.
+pub(crate) fn build_body(
+    config: &LocalConfig,
+    request: &LocalRequest,
+) -> Result<Vec<u8>, LocalError> {
+    check_request(config, request)?;
+    let invalid = |reason: &str| LocalError::RequestInvalid {
+        reason: reason.to_string(),
+    };
+    let schema = request.reply_schema.as_json();
     let mut messages = vec![Message {
         role: "system",
         content: &request.instructions,
