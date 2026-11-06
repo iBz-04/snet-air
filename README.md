@@ -3,7 +3,7 @@
 </div>
 
 <p align="center">
-  <img src="https://res.cloudinary.com/unyt8jsx/image/upload/f_auto,q_auto/antinet-logo-black-on-white-1024" alt="snet-air Logo" width="200"/>
+  <img src="https://res.cloudinary.com/unyt8jsx/image/upload/v1793968963/antinet-squircle-logo-black-on-white-1024.png" alt="snet-air Logo" width="200"/>
 </p>
 
 <div align="center">
