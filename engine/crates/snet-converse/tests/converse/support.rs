@@ -166,7 +166,7 @@ impl Rig {
         let dictionary = directory.path().join("people.txt");
         std::fs::write(&dictionary, "Ahmet Yılmaz\nZeynep Kaya\n").unwrap();
         let policy = Policy::parse(&format!(
-            "patterns = []\npassthrough = []\n[builtin]\nEMAIL = true\nPHONE = true\nIBAN = true\nPAYMENT_CARD = true\nTR_IDENTITY = true\nIP_ADDRESS = true\nMAC_ADDRESS = true\n[[dictionaries]]\ncategory = \"PERSON\"\npath = \"{}\"\n",
+            "patterns = []\npassthrough = []\n[builtin]\nEMAIL = true\nPHONE = true\nIBAN = true\nPAYMENT_CARD = true\nTR_IDENTITY = true\nIP_ADDRESS = true\nMAC_ADDRESS = true\n[[dictionaries]]\ncategory = \"PERSON\"\npath = '{}'\n",
             dictionary.display()
         ))
         .unwrap();
