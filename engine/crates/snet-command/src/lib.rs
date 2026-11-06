@@ -8,6 +8,7 @@ mod environment;
 mod exit;
 #[cfg(unix)]
 mod hardening;
+mod interactive;
 mod output;
 mod settings;
 #[cfg(test)]
@@ -50,6 +51,10 @@ pub fn run(
     let result = harden()
         .and_then(|()| arguments::from_os(arguments))
         .and_then(|command| match command {
+            arguments::Command::Interactive if interactive::available() => {
+                interactive::run(environment)
+            }
+            arguments::Command::Interactive => Err(CommandError::usage(arguments::USAGE)),
             arguments::Command::Help => {
                 writeln!(output, "{}", arguments::USAGE)
                     .map_err(|error| CommandError::failed(error.to_string()))?;

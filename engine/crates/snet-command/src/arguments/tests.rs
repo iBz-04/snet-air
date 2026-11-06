@@ -54,11 +54,12 @@ fn help_and_version_are_commands() {
     assert_eq!(parse(&words("--help")).unwrap(), Command::Help);
     assert_eq!(parse(&words("help")).unwrap(), Command::Help);
     assert_eq!(parse(&words("--version")).unwrap(), Command::Version);
+    assert_eq!(parse(&[]).unwrap(), Command::Interactive);
 }
 
 #[test]
 fn mistakes_are_named() {
-    assert!(refused("").starts_with("usage: snet ask"));
+    assert!(refused("nonsense").starts_with("usage: snet"));
     assert!(refused("ask").contains("needs a question"));
     assert!(refused("ask Who?").contains("at least one file"));
     assert!(refused("ask Who? a.txt a.txt").contains("named twice"));

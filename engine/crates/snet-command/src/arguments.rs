@@ -3,7 +3,8 @@ use std::path::PathBuf;
 
 use crate::exit::CommandError;
 
-pub const USAGE: &str = "usage: snet ask [options] <question> <file>...
+pub const USAGE: &str = "usage: snet                                  (interactive, in a terminal)
+       snet ask [options] <question> <file>...
 
 A model on your machine reads the files. A cloud model plans the work and
 writes the answer from what the local model reports; it never sees the files.
@@ -23,7 +24,8 @@ options:
   --policy <file>           a pseudonymisation policy file (default: built-in detectors)
 
 environment:
-  ANTHROPIC_API_KEY, OPENAI_API_KEY or SNET_CLOUD_API_KEY   the cloud API key
+  ANTHROPIC_API_KEY, MELIOUS_API_KEY, OPENAI_API_KEY or SNET_CLOUD_API_KEY
+                the cloud API key
   OLLAMA_HOST   where Ollama listens (default 127.0.0.1:11434)
   SNET_HOME     where transcripts are written (default ~/.snet)
 
@@ -47,6 +49,8 @@ pub struct AskArguments {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Command {
+    /// No arguments: the interactive session, when run in a terminal.
+    Interactive,
     Ask(Box<AskArguments>),
     Help,
     Version,
@@ -69,6 +73,7 @@ pub fn from_os(arguments: Vec<OsString>) -> Result<Command, CommandError> {
 pub fn parse(arguments: &[String]) -> Result<Command, CommandError> {
     let words: Vec<&str> = arguments.iter().map(String::as_str).collect();
     match words.as_slice() {
+        [] => Ok(Command::Interactive),
         ["--help" | "-h" | "help"] => Ok(Command::Help),
         ["--version" | "-V"] => Ok(Command::Version),
         ["ask", rest @ ..] => ask(rest).map(|parsed| Command::Ask(Box::new(parsed))),
