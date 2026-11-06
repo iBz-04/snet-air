@@ -26,6 +26,15 @@ pub fn answer(text: &str, citations: &[CitedPassage]) -> Vec<String> {
     lines
 }
 
+/// The question the local model wrote, as the cloud model read it.
+pub fn sent(question: &str) -> Vec<String> {
+    vec![format!(
+        "  {} {}",
+        dim().apply_to("↳ the cloud read:"),
+        dim().apply_to(question)
+    )]
+}
+
 pub fn not_found(text: &str) -> Vec<String> {
     let mut lines = bulleted(
         &Style::new().yellow().bold(),

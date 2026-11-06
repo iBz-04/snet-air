@@ -16,8 +16,8 @@ use std::time::Duration;
 use console::Term;
 use dialoguer::{BasicHistory, Input};
 use indicatif::{ProgressBar, ProgressStyle};
-use snet_direct::{EarlierExchange, MAX_EARLIER_EXCHANGES};
 use snet_local::LocalModel;
+use snet_relay::{EarlierExchange, MAX_EARLIER_EXCHANGES};
 
 use crate::arguments::AskArguments;
 use crate::ask::{self, Ended, Finished};
@@ -34,9 +34,7 @@ const SPINNER_FRAMES: [&str; 7] = ["✻", "✳", "✢", "·", "✢", "✳", "✻
 struct Session {
     cloud: String,
     cloud_url: Option<String>,
-    /// `None` when no local model was found: only questions without files
-    /// can be answered then.
-    local: Option<String>,
+    local: String,
     files: Vec<String>,
     fanout: bool,
     /// The direct questions answered so far, oldest first, sent as context.
@@ -49,7 +47,7 @@ impl Session {
             fanout: self.fanout,
             cloud: Some(self.cloud.clone()),
             cloud_url: self.cloud_url.clone(),
-            local: self.local.clone(),
+            local: Some(self.local.clone()),
             question,
             files: self.files.clone(),
             ..AskArguments::default()
@@ -109,10 +107,7 @@ pub fn run(environment: &dyn Environment) -> Result<Exit, CommandError> {
         fanout: false,
         earlier: Vec::new(),
     };
-    let local = match &session.local {
-        Some(_) => Some(ready_local(&session, &overlay, &runtime)?),
-        None => None,
-    };
+    let local = ready_local(&session, &overlay, &runtime)?;
     println!();
     print_status(&session);
     print_lines(&help_lines());
@@ -160,8 +155,7 @@ pub fn run(environment: &dyn Environment) -> Result<Exit, CommandError> {
             Line::Question { text, attach } => {
                 attach_files(&mut session, attach);
                 if !text.is_empty()
-                    && let Some(exchange) =
-                        answer(&session, text, &overlay, local.as_ref(), &runtime)
+                    && let Some(exchange) = answer(&session, text, &overlay, &local, &runtime)
                 {
                     session.remember(exchange);
                 }
@@ -195,23 +189,17 @@ fn ready_local(
     Ok(local)
 }
 
-/// Runs one question as `snet ask` would and prints the result: with files
-/// attached the local model reads them, without the cloud model answers
-/// directly. Returns a direct exchange to remember; a failure is printed
-/// and the session goes on.
+/// Runs one question as `snet ask` would and prints the result. With files
+/// attached the local model reads them; without, it screens and condenses
+/// the question for the cloud model. Returns an exchange without files to
+/// remember; a failure is printed and the session goes on.
 fn answer(
     session: &Session,
     question: String,
     environment: &dyn Environment,
-    local: Option<&LocalModel>,
+    local: &LocalModel,
     runtime: &tokio::runtime::Runtime,
 ) -> Option<EarlierExchange> {
-    if !session.files.is_empty() && local.is_none() {
-        print_lines(&render::failure(
-            "no local model is set up to read files: install Ollama and run `ollama pull qwen3:4b`, then restart snet",
-        ));
-        return None;
-    }
     let direct = session.files.is_empty();
     let prepared = match ask::prepare(&session.arguments(question.clone()), environment) {
         Ok(prepared) => prepared,
@@ -221,7 +209,7 @@ fn answer(
         }
     };
     let message = if direct {
-        "Thinking"
+        "Thinking: the local model screens, the cloud model answers"
     } else {
         "Thinking: the local model reads, the cloud model plans"
     };
@@ -249,8 +237,13 @@ fn answer(
                     text,
                     citations,
                     spending,
+                    sent_question,
                 } => {
-                    let mut lines = render::answer(text.as_str(), citations);
+                    let mut lines = Vec::new();
+                    if let Some(sent) = sent_question {
+                        lines.extend(render::sent(sent));
+                    }
+                    lines.extend(render::answer(text.as_str(), citations));
                     lines.extend(render::footer(Some(spending), &transcript));
                     lines
                 }
@@ -306,10 +299,7 @@ fn print_status(session: &Session) {
         dim().apply_to(format!(
             "cloud {} · local {} · {}",
             session.cloud,
-            session
-                .local
-                .as_deref()
-                .unwrap_or("none (questions without files only)"),
+            session.local,
             session.mode()
         ))
     );

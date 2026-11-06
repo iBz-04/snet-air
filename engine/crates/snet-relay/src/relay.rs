@@ -4,6 +4,7 @@ use snet_cloud::{
     Charge, CloudClient, CloudRequest, CloudSchema, CloudTurn, Destination, JsonValue,
     OutboundText, TaskBudget, TaskLimits,
 };
+use snet_local::{LocalAnswer, LocalModel};
 use snet_protocol::{
     Ending, FailureKind, ProtocolError, append, ended, holds_bracket, question_is_valid, refused,
 };
@@ -12,34 +13,39 @@ use snet_transcript::Transcript;
 
 use crate::log;
 use crate::prompts::CLOUD_PROMPT;
+use crate::screen;
 
-/// How many earlier exchanges of a session go with a new question.
+/// How many earlier exchanges of a session go to the local model with a
+/// new question.
 pub const MAX_EARLIER_EXCHANGES: usize = 8;
 const MAX_ANSWER_CHARACTERS: usize = 32_000;
 const SECONDS: std::ops::RangeInclusive<u64> = 1..=3_600;
-const SCHEMA_NAME: &str = "direct_answer";
+const MIN_LOCAL_OUTPUT_TOKENS: u64 = 64;
+const SCHEMA_NAME: &str = "relay_answer";
 
 /// A question asked earlier in the session and the answer it got, both as
-/// the person saw them.
+/// the person saw them. They stay on the machine: the local model folds
+/// what is needed into the next cloud question.
 #[derive(Clone)]
 pub struct EarlierExchange {
     pub question: String,
     pub answer: String,
 }
 
-/// A person's question with no local material.
+/// A person's question without files.
 #[derive(Clone)]
-pub struct DirectTask {
+pub struct RelayTask {
     pub task_id: String,
     pub question: String,
     pub earlier: Vec<EarlierExchange>,
     pub seconds: u64,
+    pub local_output_tokens: u64,
 }
 
-impl std::fmt::Debug for DirectTask {
+impl std::fmt::Debug for RelayTask {
     fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         formatter
-            .debug_struct("DirectTask")
+            .debug_struct("RelayTask")
             .field("task_id", &self.task_id)
             .field("question_characters", &self.question.chars().count())
             .field("earlier", &self.earlier.len())
@@ -49,25 +55,36 @@ impl std::fmt::Debug for DirectTask {
 }
 
 #[derive(Debug)]
-pub struct DirectAnswer {
+pub struct RelayAnswer {
     pub task_id: String,
     pub text: Restored,
+    /// The question exactly as the cloud model read it, pseudonyms
+    /// included, so the person can see what left the machine.
+    pub sent_question: String,
     pub charge: Charge,
+    pub local_tokens: u64,
     pub task_end_line: u64,
 }
 
-/// Answers direct questions over one cloud endpoint, one pseudonymisation
-/// policy and one transcript.
-pub struct Direct<'a> {
+/// Runs relay tasks over one local model, one cloud endpoint, one
+/// pseudonymisation policy and one transcript.
+pub struct Relay<'a> {
     pub cloud: &'a CloudClient<Transcript>,
+    pub local: &'a LocalModel,
     pub policy: &'a Policy,
     pub transcript: &'a Transcript,
     /// Never wider than the endpoint's task limits.
     pub budget: TaskLimits,
 }
 
-impl Direct<'_> {
-    pub async fn run(&self, task: &DirectTask) -> Result<DirectAnswer, ProtocolError> {
+/// What the cloud step gives back on success.
+struct Answered {
+    text: Restored,
+    sent_question: String,
+}
+
+impl Relay<'_> {
+    pub async fn run(&self, task: &RelayTask) -> Result<RelayAnswer, ProtocolError> {
         let config = self.cloud.config();
         let budget = match TaskBudget::new(&task.task_id, self.budget) {
             Ok(budget) => budget,
@@ -76,40 +93,127 @@ impl Direct<'_> {
         if !self.budget.within(&config.task_limits()) {
             return Err(self.refuse(Some(&task.task_id), "budget"));
         }
-        if let Some(field) = invalid_field(task) {
+        if let Some(field) = invalid_field(task, self.local.config().max_output_tokens()) {
             return Err(self.refuse(Some(&task.task_id), &field));
         }
-
-        let destination = Destination::new(config.name(), config.base_url().host());
-        let pseudonymiser = self.policy.for_destination(destination);
-        let mut mapping = TaskMapping::new();
-        let message = match user_message(&pseudonymiser, &mut mapping, task) {
-            Ok(message) => message,
-            Err(error) => {
-                append(self.transcript, refused(Some(&task.task_id), "question")?)?;
-                return Err(error);
-            }
-        };
+        let local_request = screen::request(task)?;
+        if self.local.check(&local_request).is_err() {
+            return Err(self.refuse(Some(&task.task_id), "question"));
+        }
         append(
             self.transcript,
-            log::started(self.cloud, self.policy.digest(), task)?,
+            log::started(self.cloud, self.local, self.policy.digest(), task)?,
         )?;
 
+        let mut local_tokens = 0;
         let limit = Duration::from_secs(task.seconds);
-        let result =
-            match tokio::time::timeout(limit, self.ask(&budget, &pseudonymiser, &mapping, message))
-                .await
-            {
-                Ok(result) => result,
-                Err(_elapsed) => Err(ProtocolError::new(
-                    FailureKind::Timeout,
-                    "the task's time limit passed",
-                )),
-            };
-        self.finish(task, &budget, result)
+        let result = match tokio::time::timeout(
+            limit,
+            self.screen_then_ask(task, &budget, local_request, &mut local_tokens),
+        )
+        .await
+        {
+            Ok(result) => result,
+            Err(_elapsed) => Err(ProtocolError::new(
+                FailureKind::Timeout,
+                "the task's time limit passed",
+            )),
+        };
+        self.finish(task, &budget, local_tokens, result)
     }
 
-    async fn ask(
+    async fn screen_then_ask(
+        &self,
+        task: &RelayTask,
+        budget: &TaskBudget,
+        local_request: snet_local::LocalRequest,
+        local_tokens: &mut u64,
+    ) -> Result<Answered, ProtocolError> {
+        let (_screening, screened) = self
+            .local_step(
+                task,
+                1,
+                &task.question,
+                &local_request,
+                local_tokens,
+                screen::screened,
+            )
+            .await?;
+        // A second pass over the question about to leave: the local model
+        // lists any private detail its first pass kept, so privacy does not
+        // rest on one reply of a small model.
+        let check_request =
+            screen::check_request(&screened.cloud_question, task.local_output_tokens)?;
+        let (_check, missed) = self
+            .local_step(
+                task,
+                2,
+                &screened.cloud_question,
+                &check_request,
+                local_tokens,
+                screen::private_terms,
+            )
+            .await?;
+        let mut terms = screened.private_terms;
+        terms.extend(missed);
+
+        let task_policy = self.policy.with_task_terms(&terms).map_err(|error| {
+            ProtocolError::new(FailureKind::Pseudonymisation, error.to_string())
+        })?;
+        let config = self.cloud.config();
+        let destination = Destination::new(config.name(), config.base_url().host());
+        let pseudonymiser = task_policy.for_destination(destination);
+        let mut mapping = TaskMapping::new();
+        let question = pseudonymiser
+            .text(&mut mapping, &screened.cloud_question)
+            .map_err(|error| {
+                ProtocolError::new(FailureKind::Pseudonymisation, error.to_string())
+            })?;
+        let sent_question = question.as_str().to_string();
+        let message = pseudonymiser
+            .typed(&OutboundJson::Object(vec![(
+                "question",
+                OutboundJson::Text(question),
+            )]))
+            .map_err(|error| {
+                ProtocolError::new(FailureKind::Pseudonymisation, error.to_string())
+            })?;
+        let text = self
+            .ask_cloud(budget, &pseudonymiser, &mapping, message)
+            .await?;
+        Ok(Answered {
+            text,
+            sent_question,
+        })
+    }
+
+    /// Asks the local model, records the step, and checks its reply with
+    /// `check`; local tokens are added to `local_tokens`.
+    async fn local_step<T>(
+        &self,
+        task: &RelayTask,
+        step: u32,
+        question: &str,
+        request: &snet_local::LocalRequest,
+        local_tokens: &mut u64,
+        check: impl Fn(&snet_local::JsonObject) -> Result<T, ProtocolError>,
+    ) -> Result<(LocalAnswer, T), ProtocolError> {
+        let checked = match self.local.ask(request).await {
+            Ok(answer) => {
+                *local_tokens += answer.prompt_tokens + answer.completion_tokens;
+                check(&answer.object).map(|value| (answer, value))
+            }
+            Err(error) => Err(ProtocolError::new(FailureKind::Local, error.to_string())),
+        };
+        let record = match &checked {
+            Ok((answer, _)) => log::exchange(&task.task_id, step, question, Some(answer), None)?,
+            Err(error) => log::exchange(&task.task_id, step, question, None, Some(error.kind))?,
+        };
+        append(self.transcript, record)?;
+        checked
+    }
+
+    async fn ask_cloud(
         &self,
         budget: &TaskBudget,
         pseudonymiser: &Pseudonymiser<'_>,
@@ -177,10 +281,11 @@ impl Direct<'_> {
 
     fn finish(
         &self,
-        task: &DirectTask,
+        task: &RelayTask,
         budget: &TaskBudget,
-        result: Result<Restored, ProtocolError>,
-    ) -> Result<DirectAnswer, ProtocolError> {
+        local_tokens: u64,
+        result: Result<Answered, ProtocolError>,
+    ) -> Result<RelayAnswer, ProtocolError> {
         if let Err(error) = &result
             && error.kind == FailureKind::Record
         {
@@ -190,7 +295,7 @@ impl Direct<'_> {
             .charged()
             .map_err(|error| ProtocolError::new(FailureKind::Cloud, error.to_string()))?;
         let (outcome, answer, error_kind) = match &result {
-            Ok(text) => ("answer", Some(text.as_str()), None),
+            Ok(answered) => ("answer", Some(answered.text.as_str()), None),
             Err(error) => ("failed", None, Some(error.kind)),
         };
         let task_end_line = append(
@@ -203,14 +308,17 @@ impl Direct<'_> {
                     answer,
                     citations: &[],
                     charge,
-                    local_tokens: 0,
+                    local_tokens,
                 },
             )?,
         )?;
-        Ok(DirectAnswer {
+        let answered = result?;
+        Ok(RelayAnswer {
             task_id: task.task_id.clone(),
-            text: result?,
+            text: answered.text,
+            sent_question: answered.sent_question,
             charge,
+            local_tokens,
             task_end_line,
         })
     }
@@ -221,7 +329,7 @@ fn invalid_reply(detail: impl Into<String>) -> ProtocolError {
 }
 
 /// The first field that breaks the input checks.
-fn invalid_field(task: &DirectTask) -> Option<String> {
+fn invalid_field(task: &RelayTask, local_output_cap: u64) -> Option<String> {
     if !question_is_valid(&task.question) {
         return Some("question".to_string());
     }
@@ -242,39 +350,8 @@ fn invalid_field(task: &DirectTask) -> Option<String> {
     if !SECONDS.contains(&task.seconds) {
         return Some("seconds".to_string());
     }
-    None
-}
-
-/// The question and earlier exchanges as typed JSON, every text
-/// pseudonymised with this task's mapping.
-fn user_message(
-    pseudonymiser: &Pseudonymiser<'_>,
-    mapping: &mut TaskMapping,
-    task: &DirectTask,
-) -> Result<OutboundText, ProtocolError> {
-    let pseudonymised = |error: snet_pseudonym::PseudonymError| {
-        ProtocolError::new(FailureKind::Pseudonymisation, error.to_string())
-    };
-    let mut earlier = Vec::with_capacity(task.earlier.len());
-    for exchange in &task.earlier {
-        let question = pseudonymiser
-            .text(mapping, &exchange.question)
-            .map_err(pseudonymised)?;
-        let answer = pseudonymiser
-            .text(mapping, &exchange.answer)
-            .map_err(pseudonymised)?;
-        earlier.push(OutboundJson::Object(vec![
-            ("question", OutboundJson::Text(question)),
-            ("answer", OutboundJson::Text(answer)),
-        ]));
+    if !(MIN_LOCAL_OUTPUT_TOKENS..=local_output_cap).contains(&task.local_output_tokens) {
+        return Some("local_output_tokens".to_string());
     }
-    let question = pseudonymiser
-        .text(mapping, &task.question)
-        .map_err(pseudonymised)?;
-    pseudonymiser
-        .typed(&OutboundJson::Object(vec![
-            ("question", OutboundJson::Text(question)),
-            ("earlier", OutboundJson::Array(earlier)),
-        ]))
-        .map_err(pseudonymised)
+    None
 }

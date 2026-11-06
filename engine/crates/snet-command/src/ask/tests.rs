@@ -43,6 +43,8 @@ fn endpoint_text(port: u16) -> String {
 /// What the scripted Ollama does with chat requests.
 enum Ollama {
     Answers(Value),
+    /// One answer per chat request, in order.
+    AnswersInTurn(Vec<Value>),
     FailsEveryChat,
     Down,
 }
@@ -80,7 +82,8 @@ async fn run_with_files(with_files: bool, cloud_script: Vec<Value>, ollama: Olla
         .await
         .unwrap();
     let (_ollama_server, ollama_host) = match ollama {
-        Ollama::Answers(_) | Ollama::FailsEveryChat => {
+        Ollama::Answers(_) | Ollama::AnswersInTurn(_) | Ollama::FailsEveryChat => {
+            let chats = Arc::new(std::sync::atomic::AtomicUsize::new(0));
             let handler: LoopbackHandler = Arc::new(move |request| {
                 if request.request_line.starts_with("GET /api/tags") {
                     let body = json!({"models": [{"name": "qwen3:4b", "model": "qwen3:4b", "digest": DIGEST, "size": 1}]});
@@ -92,6 +95,13 @@ async fn run_with_files(with_files: bool, cloud_script: Vec<Value>, ollama: Olla
                 }
                 match &ollama {
                     Ollama::Answers(answer) => LoopbackReply::Bytes(ollama_reply(answer.clone())),
+                    Ollama::AnswersInTurn(answers) => {
+                        let turn = chats.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+                        match answers.get(turn) {
+                            Some(answer) => LoopbackReply::Bytes(ollama_reply(answer.clone())),
+                            None => LoopbackReply::Bytes(http_response(500, &[], b"{}")),
+                        }
+                    }
                     _ => LoopbackReply::Bytes(http_response(
                         500,
                         &[("content-type", "application/json")],
@@ -150,7 +160,7 @@ async fn run_with_files(with_files: bool, cloud_script: Vec<Value>, ollama: Olla
     let mut output = Vec::new();
     let mut errors = Vec::new();
     let local = LocalModel::new(prepared.settings.local.clone());
-    let exit = match execute(prepared, Some(&local), &[]).await {
+    let exit = match execute(prepared, &local, &[]).await {
         Ok(finished) => report(finished, &mut output, &mut errors),
         Err(error) => Err(error),
     };
@@ -285,11 +295,14 @@ async fn a_stopped_ollama_is_reported_before_anything_is_sent() {
 }
 
 #[tokio::test(flavor = "multi_thread")]
-async fn a_question_without_files_is_answered_by_the_cloud_alone() {
+async fn a_question_without_files_goes_through_both_models() {
     let result = run_with_files(
         false,
         vec![json!({"answer": "Slow start doubles the window each round trip."})],
-        Ollama::Down,
+        Ollama::AnswersInTurn(vec![
+            json!({"cloud_question": "What is TCP slow start?", "private_terms": []}),
+            json!({"private_terms": []}),
+        ]),
     )
     .await;
     assert_eq!(result.exit, Ok(Exit::Success));
@@ -298,11 +311,27 @@ async fn a_question_without_files_is_answered_by_the_cloud_alone() {
         "Slow start doubles the window each round trip.\n"
     );
     assert!(
-        result.errors.contains("question 1, cloud requests 1"),
+        result
+            .errors
+            .contains("sent to the cloud: What is TCP slow start?"),
+        "{}",
+        result.errors
+    );
+    assert!(
+        result.errors.contains("local tokens 680"),
         "{}",
         result.errors
     );
     assert_eq!(result.cloud_bodies.len(), 1);
-    assert_eq!(result.transcript[0]["kind"], "direct_started");
-    assert_eq!(result.transcript.last().unwrap()["outcome"], "answer");
+    assert_eq!(result.transcript[0]["kind"], "relay_started");
+    assert_eq!(result.transcript[1]["kind"], "local_exchange");
+    assert_eq!(result.transcript[2]["kind"], "local_exchange");
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn a_question_without_files_needs_the_local_model() {
+    let result = run_with_files(false, vec![json!({"answer": "unused"})], Ollama::Down).await;
+    let error = result.exit.unwrap_err();
+    assert_eq!(error.exit, Exit::Configuration);
+    assert!(result.cloud_bodies.is_empty());
 }

@@ -11,17 +11,17 @@ const OLLAMA_PREFIX: &str = "ollama:";
 
 /// Takes `SNET_LOCAL` when it is set, and otherwise offers the models the
 /// local Ollama has pulled and, in a GGUF build, a GGUF file. Returns the
-/// choice as `snet ask --local` takes it, or `None` when there is nothing
-/// to offer: the session then answers questions without files only.
+/// choice as `snet ask --local` takes it. Every question needs the local
+/// model, so the session cannot start without one.
 pub fn choose_local(
     theme: &ColorfulTheme,
     environment: &dyn Environment,
     runtime: &tokio::runtime::Runtime,
-) -> Result<Option<String>, CommandError> {
+) -> Result<String, CommandError> {
     if let Some(local) = environment.variable("SNET_LOCAL")?
         && !local.is_empty()
     {
-        return Ok(Some(local));
+        return Ok(local);
     }
     let address = ollama_address(environment.variable("OLLAMA_HOST")?.as_deref())
         .map_err(|error| CommandError::configuration(error.to_string()))?;
@@ -56,13 +56,9 @@ pub fn choose_local(
         .chain(gguf_option())
         .collect();
     if labels.is_empty() {
-        println!(
-            "  {}",
-            dim().apply_to(
-                "No local model found, so files cannot be read yet; questions without files still work. To read files, install Ollama (https://ollama.com) and run `ollama pull qwen3:4b`."
-            )
-        );
-        return Ok(None);
+        return Err(CommandError::configuration(
+            "no local model is available, and every question needs one: install Ollama (https://ollama.com) and run `ollama pull qwen3:4b`, or install snet with `--features gguf` to run a GGUF file",
+        ));
     }
     let index = Select::with_theme(theme)
         .with_prompt("Which local model should read your files?")
@@ -71,8 +67,8 @@ pub fn choose_local(
         .interact()
         .map_err(prompt_failed)?;
     match ollama.get(index) {
-        Some(name) => Ok(Some(format!("{OLLAMA_PREFIX}{name}"))),
-        None => gguf_path(theme).map(Some),
+        Some(name) => Ok(format!("{OLLAMA_PREFIX}{name}")),
+        None => gguf_path(theme),
     }
 }
 

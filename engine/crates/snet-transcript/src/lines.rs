@@ -153,19 +153,24 @@ pub struct JobRunLine {
     pub chunks: Vec<ChunkRunLine>,
 }
 
-/// A question answered by the cloud model alone, with no local material.
+/// A question without files: the local model screens and condenses it,
+/// the cloud model answers what the local model wrote.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
-pub struct DirectStartedLine {
+pub struct RelayStartedLine {
     pub client_time_milliseconds: i64,
     pub task_id: String,
     pub question: String,
     pub earlier_exchanges: u32,
+    pub local_model: String,
     pub endpoint_name: String,
     pub host: String,
     pub cloud_model: String,
     pub policy_digest: String,
     pub cloud_prompt_sha256: String,
+    pub local_prompt_sha256: String,
+    pub check_prompt_sha256: String,
     pub seconds: u64,
+    pub local_output_tokens: u64,
 }
 
 /// One step of a task's log. None of them carries the pseudonym mapping, so
@@ -179,5 +184,5 @@ pub enum TaskRecord {
     TaskEnded(TaskEndedLine),
     FanOutStarted(FanOutStartedLine),
     JobRun(JobRunLine),
-    DirectStarted(DirectStartedLine),
+    RelayStarted(RelayStartedLine),
 }

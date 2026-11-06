@@ -3,11 +3,11 @@ use std::sync::Arc;
 
 use snet_cloud::{CloudClient, CloudSwitch, EndpointConfig};
 use snet_converse::{Conversation, ConversationOutcome, ConversationTask};
-use snet_direct::{Direct, DirectTask, EarlierExchange};
 use snet_fanout::{FanOut, FanOutOutcome, FanOutTask};
 use snet_local::LocalModel;
 use snet_protocol::{CitedPassage, Document, ProtocolError};
 use snet_pseudonym::{Policy, Restored};
+use snet_relay::{EarlierExchange, Relay, RelayTask};
 use snet_transcript::Transcript;
 
 use crate::arguments::AskArguments;
@@ -23,6 +23,9 @@ pub(crate) enum Ended {
         text: Restored,
         citations: Vec<CitedPassage>,
         spending: Spending,
+        /// For a question without files: the question the local model
+        /// wrote, as the cloud model read it.
+        sent_question: Option<String>,
     },
     NotFound {
         text: Restored,
@@ -55,7 +58,7 @@ pub async fn run(
 ) -> Result<Exit, CommandError> {
     let prepared = prepare(arguments, environment)?;
     let local = LocalModel::new(prepared.settings.local.clone());
-    let finished = execute(prepared, Some(&local), &[]).await?;
+    let finished = execute(prepared, &local, &[]).await?;
     report(finished, output, errors)
 }
 
@@ -94,12 +97,12 @@ pub(crate) fn prepare(
     })
 }
 
-/// Runs one task: with files, `local` reads them (one model answers every
-/// task of a session); with none, the cloud model answers directly, with
-/// `earlier` exchanges of the session as context.
+/// Runs one task with `local`, which answers every task of a session. With
+/// files, the local model reads them; without, it screens and condenses
+/// the question and `earlier` exchanges before the cloud model answers.
 pub(crate) async fn execute(
     prepared: Prepared,
-    local: Option<&LocalModel>,
+    local: &LocalModel,
     earlier: &[EarlierExchange],
 ) -> Result<Finished, CommandError> {
     let Prepared {
@@ -109,20 +112,12 @@ pub(crate) async fn execute(
         files,
         endpoint,
     } = prepared;
-    let local = if files.is_empty() {
-        None
-    } else {
-        let local = local.ok_or_else(|| {
-            CommandError::configuration("no local model is set up to read the files")
-        })?;
-        // Before anything goes to the cloud: Ollama answers and has the
-        // model, or the GGUF file is loaded.
-        local
-            .prepare()
-            .await
-            .map_err(|error| CommandError::configuration(format!("the local model: {error}")))?;
-        Some(local)
-    };
+    // Before anything goes to the cloud: Ollama answers and has the model,
+    // or the GGUF file is loaded.
+    local
+        .prepare()
+        .await
+        .map_err(|error| CommandError::configuration(format!("the local model: {error}")))?;
     let task_id = new_task_id()?;
     let transcript = Transcript::create(&settings.home, &task_id)
         .map_err(|error| CommandError::failed(format!("the transcript: {error}")))?;
@@ -135,103 +130,102 @@ pub(crate) async fn execute(
     .map_err(|error| CommandError::configuration(error.to_string()))?;
     let budget = cloud.config().task_limits();
 
-    let ended = match local {
-        None => {
-            let task = DirectTask {
-                task_id,
-                question,
-                earlier: earlier.to_vec(),
-                seconds: settings.conversation.seconds,
-            };
-            let protocol = Direct {
-                cloud: &cloud,
-                policy: &policy,
-                transcript: &transcript,
-                budget,
-            };
-            match protocol.run(&task).await {
-                Ok(answer) => Ended::Answer {
-                    text: answer.text,
-                    citations: Vec::new(),
-                    spending: Spending {
-                        steps: 1,
-                        steps_name: "question",
-                        charge: answer.charge,
-                        local_tokens: 0,
-                    },
+    let ended = if files.is_empty() {
+        let task = RelayTask {
+            task_id,
+            question,
+            earlier: earlier.to_vec(),
+            seconds: settings.conversation.seconds,
+            local_output_tokens: settings.conversation.local_output_tokens,
+        };
+        let protocol = Relay {
+            cloud: &cloud,
+            local,
+            policy: &policy,
+            transcript: &transcript,
+            budget,
+        };
+        match protocol.run(&task).await {
+            Ok(answer) => Ended::Answer {
+                text: answer.text,
+                citations: Vec::new(),
+                spending: Spending {
+                    steps: 1,
+                    steps_name: "question",
+                    charge: answer.charge,
+                    local_tokens: answer.local_tokens,
                 },
-                Err(error) => Ended::Failed(error),
-            }
+                sent_question: Some(answer.sent_question),
+            },
+            Err(error) => Ended::Failed(error),
         }
-        Some(local) if settings.fanout => {
-            let task = FanOutTask {
-                task_id,
-                question,
-                documents: files,
-                limits: settings.fan_out,
-            };
-            let protocol = FanOut {
-                cloud: &cloud,
-                local,
-                policy: &policy,
-                transcript: &transcript,
-                budget,
-            };
-            match protocol.run(&task).await {
-                Ok(answer) => {
-                    let spending = Spending {
-                        steps: answer.local_requests,
-                        steps_name: "local requests",
-                        charge: answer.charge,
-                        local_tokens: answer.local_tokens,
-                    };
-                    match answer.outcome {
-                        FanOutOutcome::Answer { text, citations } => Ended::Answer {
-                            text,
-                            citations,
-                            spending,
-                        },
-                        FanOutOutcome::NotFound { text } => Ended::NotFound { text, spending },
-                    }
+    } else if settings.fanout {
+        let task = FanOutTask {
+            task_id,
+            question,
+            documents: files,
+            limits: settings.fan_out,
+        };
+        let protocol = FanOut {
+            cloud: &cloud,
+            local,
+            policy: &policy,
+            transcript: &transcript,
+            budget,
+        };
+        match protocol.run(&task).await {
+            Ok(answer) => {
+                let spending = Spending {
+                    steps: answer.local_requests,
+                    steps_name: "local requests",
+                    charge: answer.charge,
+                    local_tokens: answer.local_tokens,
+                };
+                match answer.outcome {
+                    FanOutOutcome::Answer { text, citations } => Ended::Answer {
+                        text,
+                        citations,
+                        spending,
+                        sent_question: None,
+                    },
+                    FanOutOutcome::NotFound { text } => Ended::NotFound { text, spending },
                 }
-                Err(error) => Ended::Failed(error),
             }
+            Err(error) => Ended::Failed(error),
         }
-        Some(local) => {
-            let task = ConversationTask {
-                task_id,
-                question,
-                documents: files,
-                limits: settings.conversation,
-            };
-            let protocol = Conversation {
-                cloud: &cloud,
-                local,
-                policy: &policy,
-                transcript: &transcript,
-                budget,
-            };
-            match protocol.run(&task).await {
-                Ok(answer) => {
-                    let spending = Spending {
-                        steps: u64::from(answer.rounds),
-                        steps_name: "rounds",
-                        charge: answer.charge,
-                        local_tokens: answer.local_tokens,
-                    };
-                    match answer.outcome {
-                        ConversationOutcome::Answer { text, citations } => Ended::Answer {
-                            text,
-                            citations,
-                            spending,
-                        },
-                        ConversationOutcome::NotFound { text } => {
-                            Ended::NotFound { text, spending }
-                        }
-                    }
+    } else {
+        let task = ConversationTask {
+            task_id,
+            question,
+            documents: files,
+            limits: settings.conversation,
+        };
+        let protocol = Conversation {
+            cloud: &cloud,
+            local,
+            policy: &policy,
+            transcript: &transcript,
+            budget,
+        };
+        match protocol.run(&task).await {
+            Ok(answer) => {
+                let spending = Spending {
+                    steps: u64::from(answer.rounds),
+                    steps_name: "rounds",
+                    charge: answer.charge,
+                    local_tokens: answer.local_tokens,
+                };
+                match answer.outcome {
+                    ConversationOutcome::Answer { text, citations } => Ended::Answer {
+                        text,
+                        citations,
+                        spending,
+                        sent_question: None,
+                    },
+                    ConversationOutcome::NotFound { text } => Ended::NotFound { text, spending },
                 }
-                Err(error) => Ended::Failed(error),
             }
+            Err(error) => Ended::Failed(error),
         }
     };
     // A task can end on its time limit while an exchange is still running;
@@ -256,9 +250,13 @@ fn report(
             text,
             citations,
             spending,
+            sent_question,
         } => {
             for line in output::answer_lines(text.as_str(), &citations) {
                 writeln!(output, "{line}").map_err(print_failed)?;
+            }
+            if let Some(sent) = sent_question {
+                writeln!(errors, "sent to the cloud: {sent}").map_err(print_failed)?;
             }
             writeln!(errors, "{}", output::spending_line(&spending)).map_err(print_failed)?;
             Exit::Success
