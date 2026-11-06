@@ -58,4 +58,6 @@ pub enum RulesError {
 
     #[error("the forbidden-terms list line {line} is not 64 lowercase hex characters")]
     ForbiddenTermMalformed { line: usize },
+    #[error("the allowed-lines list line {line} is not 64 lowercase hex characters")]
+    AllowedLineMalformed { line: usize },
 }

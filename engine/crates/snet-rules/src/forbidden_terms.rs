@@ -6,6 +6,10 @@ use crate::errors::RulesError;
 use crate::words::for_each_word;
 
 pub const COMPILED_LIST: &str = include_str!("../forbidden_terms.sha256");
+/// SHA-256 digests of the exact lines a maintainer let keep a listed word,
+/// each over `<repository path>\n<line without its newline>`, so editing the
+/// line or moving it to another file ends the exemption.
+pub const COMPILED_ALLOWED_LINES: &str = include_str!("../allowed_lines.sha256");
 
 const DIGEST_BYTES: usize = 32;
 
@@ -14,11 +18,36 @@ const DIGEST_BYTES: usize = 32;
 #[derive(Debug)]
 pub struct ForbiddenTerms {
     digests: HashSet<[u8; DIGEST_BYTES]>,
+    allowed_lines: HashSet<[u8; DIGEST_BYTES]>,
 }
 
 impl ForbiddenTerms {
     pub fn compiled() -> Result<Self, RulesError> {
-        Self::parse(COMPILED_LIST)
+        Self::parse(COMPILED_LIST)?.with_allowed_lines(COMPILED_ALLOWED_LINES)
+    }
+
+    /// Adds the allowed-line digests; an empty list allows no line.
+    pub fn with_allowed_lines(mut self, list: &str) -> Result<Self, RulesError> {
+        let body = list.strip_suffix('\n').unwrap_or(list);
+        if body.is_empty() {
+            return Ok(self);
+        }
+        for (index, line) in body.split('\n').enumerate() {
+            let digest = parse_lowercase_hex_digest(line)
+                .ok_or(RulesError::AllowedLineMalformed { line: index + 1 })?;
+            self.allowed_lines.insert(digest);
+        }
+        Ok(self)
+    }
+
+    /// Whether this exact line of this file was allowed to keep a listed word.
+    pub fn is_allowed_line(&self, relative_path: &str, line: &[u8]) -> bool {
+        let mut hasher = Sha256::new();
+        hasher.update(relative_path.as_bytes());
+        hasher.update(b"\n");
+        hasher.update(line);
+        let digest: [u8; DIGEST_BYTES] = hasher.finalize().into();
+        self.allowed_lines.contains(&digest)
     }
 
     pub fn parse(list: &str) -> Result<Self, RulesError> {
@@ -33,7 +62,10 @@ impl ForbiddenTerms {
                 .ok_or(RulesError::ForbiddenTermMalformed { line: index + 1 })?;
             digests.insert(digest);
         }
-        Ok(Self { digests })
+        Ok(Self {
+            digests,
+            allowed_lines: HashSet::new(),
+        })
     }
 
     pub fn len(&self) -> usize {

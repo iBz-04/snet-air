@@ -44,8 +44,14 @@ pub fn check_repository(root: &Path, terms: &ForbiddenTerms) -> Result<Vec<Findi
         if terms.contains_listed_word(entry.relative_path.as_bytes()) {
             findings.push(forbidden_word_finding(&path, 0));
         }
+        let file_lines: Vec<&[u8]> = bytes.split(|byte| *byte == b'\n').collect();
         for line in terms.lines_with_listed_words(&bytes) {
-            findings.push(forbidden_word_finding(&path, line));
+            let allowed = file_lines
+                .get(line - 1)
+                .is_some_and(|text| terms.is_allowed_line(&entry.relative_path, text));
+            if !allowed {
+                findings.push(forbidden_word_finding(&path, line));
+            }
         }
 
         if entry.kind == EntryKind::SymbolicLink {

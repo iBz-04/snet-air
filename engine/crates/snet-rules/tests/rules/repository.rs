@@ -2,7 +2,7 @@ use std::fs;
 use std::path::Path;
 
 use crate::support::{
-    PLANTED_WORD, git, lines_of_code, passing_repository, terms_listing, write_file,
+    PLANTED_WORD, digest_hex, git, lines_of_code, passing_repository, terms_listing, write_file,
 };
 use snet_rules::errors::RulesError;
 use snet_rules::report::Rule;
@@ -49,6 +49,42 @@ fn listed_words_in_contents_names_and_force_added_files_are_reported_without_the
             .iter()
             .all(|line| !line.to_lowercase().contains(PLANTED_WORD))
     );
+}
+
+#[test]
+fn an_allowed_line_keeps_its_word_only_in_its_file_and_exact_text() {
+    let repository = passing_repository().unwrap();
+    let root = repository.path();
+    let line = "![logo](https://images.example/plantedname-logo)";
+    write_file(root, "README.md", format!("# Title\n{line}\n").as_bytes()).unwrap();
+    write_file(root, "docs/copy.md", format!("{line}\n").as_bytes()).unwrap();
+    write_file(root, "docs/edited.md", format!("{line} \n").as_bytes()).unwrap();
+    let allowed = digest_hex(&format!("README.md\n{line}")).unwrap();
+    let terms = terms_listing(&[PLANTED_WORD])
+        .unwrap()
+        .with_allowed_lines(&format!("{allowed}\n"))
+        .unwrap();
+    let printed: Vec<String> = check_repository(root, &terms)
+        .unwrap()
+        .iter()
+        .map(ToString::to_string)
+        .collect();
+    assert_eq!(
+        printed,
+        vec![
+            "docs/copy.md:1: forbidden-word: holds a word on the forbidden-terms list",
+            "docs/edited.md:1: forbidden-word: holds a word on the forbidden-terms list",
+        ]
+    );
+}
+
+#[test]
+fn a_malformed_allowed_line_digest_is_refused() {
+    let terms = terms_listing(&[PLANTED_WORD]).unwrap();
+    assert!(matches!(
+        terms.with_allowed_lines("not-a-digest\n"),
+        Err(RulesError::AllowedLineMalformed { line: 1 })
+    ));
 }
 
 #[test]
