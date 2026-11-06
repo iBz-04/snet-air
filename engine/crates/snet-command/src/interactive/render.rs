@@ -51,10 +51,10 @@ pub fn footer(spending: Option<&Spending>, transcript: &Path) -> Vec<String> {
         lines.push(format!(
             "  {}",
             dim().apply_to(format!(
-                "{} {} · {} cloud requests · {} bytes sent · {} in / {} out cloud tokens · {} local tokens",
+                "{} {} · {} · {} bytes sent · {} in / {} out cloud tokens · {} local tokens",
                 spending.steps,
                 spending.steps_name,
-                charge.requests,
+                counted(charge.requests, "cloud request"),
                 charge.bytes_sent,
                 charge.input_tokens,
                 charge.output_tokens,
@@ -67,6 +67,15 @@ pub fn footer(spending: Option<&Spending>, transcript: &Path) -> Vec<String> {
         dim().apply_to(format!("transcript {}", transcript.display()))
     ));
     lines
+}
+
+/// `count` and `noun`, with an `s` unless the count is one.
+fn counted(count: u128, noun: &str) -> String {
+    if count == 1 {
+        format!("1 {noun}")
+    } else {
+        format!("{count} {noun}s")
+    }
 }
 
 /// The first line after a coloured mark, the rest indented beneath it.

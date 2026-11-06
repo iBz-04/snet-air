@@ -16,6 +16,7 @@ use std::time::Duration;
 use console::Term;
 use dialoguer::{BasicHistory, Input};
 use indicatif::{ProgressBar, ProgressStyle};
+use snet_direct::{EarlierExchange, MAX_EARLIER_EXCHANGES};
 use snet_local::LocalModel;
 
 use crate::arguments::AskArguments;
@@ -33,9 +34,13 @@ const SPINNER_FRAMES: [&str; 7] = ["✻", "✳", "✢", "·", "✢", "✳", "✻
 struct Session {
     cloud: String,
     cloud_url: Option<String>,
-    local: String,
+    /// `None` when no local model was found: only questions without files
+    /// can be answered then.
+    local: Option<String>,
     files: Vec<String>,
     fanout: bool,
+    /// The direct questions answered so far, oldest first, sent as context.
+    earlier: Vec<EarlierExchange>,
 }
 
 impl Session {
@@ -44,10 +49,17 @@ impl Session {
             fanout: self.fanout,
             cloud: Some(self.cloud.clone()),
             cloud_url: self.cloud_url.clone(),
-            local: Some(self.local.clone()),
+            local: self.local.clone(),
             question,
             files: self.files.clone(),
             ..AskArguments::default()
+        }
+    }
+
+    fn remember(&mut self, exchange: EarlierExchange) {
+        self.earlier.push(exchange);
+        if self.earlier.len() > MAX_EARLIER_EXCHANGES {
+            self.earlier.remove(0);
         }
     }
 
@@ -95,19 +107,12 @@ pub fn run(environment: &dyn Environment) -> Result<Exit, CommandError> {
         local: local_text,
         files: Vec::new(),
         fanout: false,
+        earlier: Vec::new(),
     };
-    let local_config = settings::resolve(&session.arguments(String::new()), &overlay)?.local;
-    let local = LocalModel::new(local_config);
-    let spinner = spinner("Getting the local model ready")?;
-    let ready = runtime.block_on(local.prepare());
-    spinner.finish_and_clear();
-    let listed =
-        ready.map_err(|error| CommandError::configuration(format!("the local model: {error}")))?;
-    println!(
-        "  {} {}",
-        accent().apply_to("✔"),
-        dim().apply_to(format!("local model {} is ready", listed.name))
-    );
+    let local = match &session.local {
+        Some(_) => Some(ready_local(&session, &overlay, &runtime)?),
+        None => None,
+    };
     println!();
     print_status(&session);
     print_lines(&help_lines());
@@ -139,7 +144,11 @@ pub fn run(environment: &dyn Environment) -> Result<Exit, CommandError> {
             Line::Files => print_files(&session),
             Line::Clear => {
                 session.files.clear();
-                println!("  {}", dim().apply_to("No files attached."));
+                session.earlier.clear();
+                println!(
+                    "  {}",
+                    dim().apply_to("No files attached, and earlier questions are forgotten.")
+                );
             }
             Line::Fanout => {
                 session.fanout = !session.fanout;
@@ -150,8 +159,11 @@ pub fn run(environment: &dyn Environment) -> Result<Exit, CommandError> {
             ))),
             Line::Question { text, attach } => {
                 attach_files(&mut session, attach);
-                if !text.is_empty() {
-                    answer(&session, text, &overlay, &local, &runtime);
+                if !text.is_empty()
+                    && let Some(exchange) =
+                        answer(&session, text, &overlay, local.as_ref(), &runtime)
+                {
+                    session.remember(exchange);
                 }
             }
         }
@@ -162,39 +174,76 @@ pub fn run(environment: &dyn Environment) -> Result<Exit, CommandError> {
     Ok(Exit::Success)
 }
 
-/// Runs one question as `snet ask` would and prints the result; a failure
-/// is printed and the session goes on.
+/// Loads the chosen local model once for the whole session.
+fn ready_local(
+    session: &Session,
+    environment: &dyn Environment,
+    runtime: &tokio::runtime::Runtime,
+) -> Result<LocalModel, CommandError> {
+    let local_config = settings::resolve(&session.arguments(String::new()), environment)?.local;
+    let local = LocalModel::new(local_config);
+    let spinner = spinner("Getting the local model ready")?;
+    let ready = runtime.block_on(local.prepare());
+    spinner.finish_and_clear();
+    let listed =
+        ready.map_err(|error| CommandError::configuration(format!("the local model: {error}")))?;
+    println!(
+        "  {} {}",
+        accent().apply_to("✔"),
+        dim().apply_to(format!("local model {} is ready", listed.name))
+    );
+    Ok(local)
+}
+
+/// Runs one question as `snet ask` would and prints the result: with files
+/// attached the local model reads them, without the cloud model answers
+/// directly. Returns a direct exchange to remember; a failure is printed
+/// and the session goes on.
 fn answer(
     session: &Session,
     question: String,
     environment: &dyn Environment,
-    local: &LocalModel,
+    local: Option<&LocalModel>,
     runtime: &tokio::runtime::Runtime,
-) {
-    if session.files.is_empty() {
+) -> Option<EarlierExchange> {
+    if !session.files.is_empty() && local.is_none() {
         print_lines(&render::failure(
-            "attach at least one file first, such as @notes.txt",
+            "no local model is set up to read files: install Ollama and run `ollama pull qwen3:4b`, then restart snet",
         ));
-        return;
+        return None;
     }
-    let prepared = match ask::prepare(&session.arguments(question), environment) {
+    let direct = session.files.is_empty();
+    let prepared = match ask::prepare(&session.arguments(question.clone()), environment) {
         Ok(prepared) => prepared,
         Err(error) => {
             print_lines(&render::failure(&error.to_string()));
-            return;
+            return None;
         }
     };
-    let spinner = match spinner("Thinking: the local model reads, the cloud model plans") {
+    let message = if direct {
+        "Thinking"
+    } else {
+        "Thinking: the local model reads, the cloud model plans"
+    };
+    let spinner = match spinner(message) {
         Ok(spinner) => spinner,
         Err(error) => {
             print_lines(&render::failure(&error.to_string()));
-            return;
+            return None;
         }
     };
-    let finished = runtime.block_on(ask::execute(prepared, local));
+    let earlier: &[EarlierExchange] = if direct { &session.earlier } else { &[] };
+    let finished = runtime.block_on(ask::execute(prepared, local, earlier));
     spinner.finish_and_clear();
+    let mut remembered = None;
     match finished {
         Ok(Finished { ended, transcript }) => {
+            if let (true, Ended::Answer { text, .. }) = (direct, &ended) {
+                remembered = Some(EarlierExchange {
+                    question,
+                    answer: text.as_str().to_string(),
+                });
+            }
             let lines = match &ended {
                 Ended::Answer {
                     text,
@@ -220,6 +269,7 @@ fn answer(
         }
         Err(error) => print_lines(&render::failure(&error.to_string())),
     }
+    remembered
 }
 
 fn attach_files(session: &mut Session, attach: Vec<String>) {
@@ -256,7 +306,10 @@ fn print_status(session: &Session) {
         dim().apply_to(format!(
             "cloud {} · local {} · {}",
             session.cloud,
-            session.local,
+            session
+                .local
+                .as_deref()
+                .unwrap_or("none (questions without files only)"),
             session.mode()
         ))
     );
@@ -266,7 +319,7 @@ fn help_lines() -> Vec<String> {
     vec![
         format!(
             "  {}",
-            dim().apply_to("Ask about your files. Attach them with @path, for example:")
+            dim().apply_to("Ask anything. To ask about your files, attach them with @path:")
         ),
         format!(
             "  {}",
@@ -275,7 +328,7 @@ fn help_lines() -> Vec<String> {
         format!(
             "  {}",
             dim().apply_to(
-                "/files list attached · /clear detach all · /fanout large-file mode · /exit quit"
+                "/files list attached · /clear detach all and forget · /fanout large-file mode · /exit quit"
             )
         ),
     ]
