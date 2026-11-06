@@ -169,7 +169,7 @@ fn malformed_choices_are_refused() {
                 local: Some("llama3".to_string()),
                 ..arguments()
             },
-            "must be ollama:<model> or gguf:<file>",
+            "must be a pulled model such as qwen3:4b, ollama:<model> or gguf:<file>",
         ),
         (
             AskArguments {
@@ -245,4 +245,50 @@ fn a_gguf_model_is_a_file_checked_before_anything_runs() {
         ..arguments()
     };
     assert_eq!(error(&missing, &key).exit, Exit::Configuration);
+}
+
+#[test]
+fn a_model_name_that_is_not_pulled_says_to_pull_it() {
+    let home = tempfile::tempdir().unwrap();
+    let with_name = AskArguments {
+        local: Some("qwen3:4b".to_string()),
+        ..arguments()
+    };
+    let environment = environment(&[
+        ("ANTHROPIC_API_KEY", "sk-1"),
+        ("SNET_HOME", home.path().to_str().unwrap()),
+    ]);
+    let refused = error(&with_name, &environment);
+    assert_eq!(refused.exit, Exit::Configuration);
+    assert!(
+        refused.message.contains("snet pull qwen3:4b"),
+        "{}",
+        refused.message
+    );
+}
+
+#[cfg(feature = "gguf")]
+#[test]
+fn a_pulled_model_is_the_default_local_model() {
+    let home = tempfile::tempdir().unwrap();
+    let models = home.path().join("models");
+    std::fs::create_dir_all(&models).unwrap();
+    let model = snet_pull::catalog_model("qwen3:4b").unwrap();
+    // A sparse file of the pinned length stands in for the weights.
+    std::fs::File::create(models.join(model.file))
+        .unwrap()
+        .set_len(model.bytes)
+        .unwrap();
+    let settings = resolve(
+        &arguments(),
+        &environment(&[
+            ("ANTHROPIC_API_KEY", "sk-1"),
+            ("SNET_HOME", home.path().to_str().unwrap()),
+        ]),
+    )
+    .unwrap();
+    match settings.local.backend() {
+        Backend::Gguf { path } => assert!(path.ends_with(model.file)),
+        other => panic!("not the pulled model: {other:?}"),
+    }
 }

@@ -54,8 +54,8 @@ deny = [
     { crate = "openssl", reason = "OpenSSL: banned outright" },
     { crate = "openssl-sys", reason = "OpenSSL: banned outright" },
     { crate = "tokio-native-tls", reason = "TLS through native-tls: banned outright" },
-    # Models arrive as signed bundles and are never fetched.
-    { crate = "hf-hub", reason = "model downloader: models are never fetched" },
+    # `snet pull` fetches pinned files with its own checked downloader.
+    { crate = "hf-hub", reason = "model downloader: snet-pull fetches pinned files itself" },
     # Nothing a model writes may ever run on the machine.
     { crate = "bashkit", reason = "shell execution: model output must never run code" },
     { crate = "boa_engine", reason = "JavaScript interpreter: model output must never run code" },

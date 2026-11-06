@@ -6,13 +6,14 @@ use super::setup::prompt_failed;
 use super::theme::dim;
 use crate::environment::Environment;
 use crate::exit::CommandError;
+use crate::settings;
 
 const OLLAMA_PREFIX: &str = "ollama:";
 
-/// Takes `SNET_LOCAL` when it is set, and otherwise offers the models the
-/// local Ollama has pulled and, in a GGUF build, a GGUF file. Returns the
-/// choice as `snet ask --local` takes it. Every question needs the local
-/// model, so the session cannot start without one.
+/// Takes `SNET_LOCAL` when it is set, then a model `snet pull` fetched, and
+/// otherwise offers the models the local Ollama has and, in a GGUF build, a
+/// GGUF file. Returns the choice as `snet ask --local` takes it. Every
+/// question needs the local model, so the session cannot start without one.
 pub fn choose_local(
     theme: &ColorfulTheme,
     environment: &dyn Environment,
@@ -22,6 +23,10 @@ pub fn choose_local(
         && !local.is_empty()
     {
         return Ok(local);
+    }
+    let pulled = settings::default_local(&settings::home(environment)?);
+    if pulled != settings::DEFAULT_LOCAL {
+        return Ok(pulled);
     }
     let address = ollama_address(environment.variable("OLLAMA_HOST")?.as_deref())
         .map_err(|error| CommandError::configuration(error.to_string()))?;
@@ -57,7 +62,7 @@ pub fn choose_local(
         .collect();
     if labels.is_empty() {
         return Err(CommandError::configuration(
-            "no local model is available, and every question needs one: install Ollama (https://ollama.com) and run `ollama pull qwen3:4b`, or install snet with `--features gguf` to run a GGUF file",
+            "no local model yet, and every question needs one: run `snet pull` (or `ollama pull qwen3:4b`)",
         ));
     }
     let index = Select::with_theme(theme)

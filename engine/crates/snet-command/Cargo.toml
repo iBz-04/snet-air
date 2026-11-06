@@ -31,6 +31,7 @@ snet-pseudonym = { path = "../snet-pseudonym" }
 snet-transcript = { path = "../snet-transcript" }
 thiserror = "2.0.21"
 tokio = { version = "1.54.1", features = ["rt-multi-thread", "time"] }
+snet-pull = { version = "0.1.0", path = "../snet-pull" }
 
 # The core-dump limit and, on Linux, the dumpable flag.
 [target.'cfg(unix)'.dependencies]

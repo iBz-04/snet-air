@@ -1,0 +1,31 @@
+[package]
+name = "snet-pull"
+version = "0.1.0"
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+publish.workspace = true
+description = "Downloads a pinned local model over verified TLS and checks its SHA-256 before it is used"
+
+[dependencies]
+bytes = "1.12.1"
+http = "1.5.0"
+http-body-util = "0.1.5"
+hyper = { version = "1.12.0", default-features = false, features = ["client", "http1"] }
+rustls = { version = "0.23.46", default-features = false, features = ["aws_lc_rs", "prefer-post-quantum", "std"] }
+rustls-pki-types = { version = "1.15.1", features = ["std"] }
+sha2 = "0.11.1"
+snet-wire = { path = "../snet-wire" }
+thiserror = "2.0.21"
+tokio = { version = "1.54.1", features = ["fs", "io-util", "macros", "net", "rt", "time"] }
+tokio-rustls = { version = "0.26.6", default-features = false, features = ["aws_lc_rs"] }
+webpki-roots = "1.0.11"
+
+[dev-dependencies]
+snet-testkit = { path = "../snet-testkit" }
+tempfile = "3.27.0"
+tokio = { version = "1.54.1", features = ["macros", "rt-multi-thread"] }
+
+[lints]
+workspace = true

@@ -10,6 +10,7 @@ mod exit;
 mod hardening;
 mod interactive;
 mod output;
+mod pull;
 mod settings;
 #[cfg(test)]
 mod test_support;
@@ -55,6 +56,15 @@ pub fn run(
                 interactive::run(environment)
             }
             arguments::Command::Interactive => Err(CommandError::usage(arguments::USAGE)),
+            arguments::Command::Pull(name) => {
+                let runtime = tokio::runtime::Builder::new_multi_thread()
+                    .enable_all()
+                    .build()
+                    .map_err(|error| {
+                        CommandError::failed(format!("the runtime did not start: {error}"))
+                    })?;
+                runtime.block_on(pull::run(name.as_deref(), environment, output))
+            }
             arguments::Command::Help => {
                 writeln!(output, "{}", arguments::USAGE)
                     .map_err(|error| CommandError::failed(error.to_string()))?;

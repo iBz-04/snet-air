@@ -52,8 +52,9 @@ pub fn prompt_failed(error: dialoguer::Error) -> CommandError {
     CommandError::failed(format!("the terminal prompt failed: {error}"))
 }
 
-/// Takes `SNET_CLOUD` when it is set, and otherwise asks which cloud and
-/// model to use; then makes sure the provider's key is known.
+/// Takes `SNET_CLOUD` when it is set, Anthropic's default model when only
+/// its key is set, and otherwise asks which cloud and model to use; then
+/// makes sure the provider's key is known.
 pub fn choose_cloud(
     theme: &ColorfulTheme,
     overlay: &mut OverlayEnvironment,
@@ -62,6 +63,10 @@ pub fn choose_cloud(
         Some(cloud) if !cloud.is_empty() => CloudChoice {
             cloud,
             cloud_url: overlay.variable("SNET_CLOUD_URL")?,
+        },
+        _ if has_value(overlay, Provider::Anthropic.key_variable())? => CloudChoice {
+            cloud: DEFAULT_CLOUD.to_string(),
+            cloud_url: None,
         },
         _ => ask_cloud(theme, overlay)?,
     };

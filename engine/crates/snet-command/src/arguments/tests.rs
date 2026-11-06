@@ -55,6 +55,11 @@ fn help_and_version_are_commands() {
     assert_eq!(parse(&words("help")).unwrap(), Command::Help);
     assert_eq!(parse(&words("--version")).unwrap(), Command::Version);
     assert_eq!(parse(&[]).unwrap(), Command::Interactive);
+    assert_eq!(parse(&words("pull")).unwrap(), Command::Pull(None));
+    assert_eq!(
+        parse(&words("pull qwen3:8b")).unwrap(),
+        Command::Pull(Some("qwen3:8b".to_string()))
+    );
 }
 
 #[test]

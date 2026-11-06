@@ -92,11 +92,13 @@ pub fn resolve(
         CommandError::configuration(format!("{key_variable} is not a usable key: {error}"))
     })?;
 
+    let home = home(environment)?;
     let local_text = match &arguments.local {
         Some(text) => text.clone(),
-        None => environment
-            .variable("SNET_LOCAL")?
-            .unwrap_or_else(|| DEFAULT_LOCAL.to_string()),
+        None => match environment.variable("SNET_LOCAL")? {
+            Some(text) if !text.is_empty() => text,
+            _ => default_local(&home),
+        },
     };
     let local = match (
         local_text.strip_prefix(OLLAMA_PREFIX),
@@ -108,11 +110,21 @@ pub fn resolve(
                 .map_err(|error| CommandError::configuration(error.to_string()))?
         }
         (None, Some(path)) => gguf_config(path)?,
-        (None, None) => {
-            return Err(CommandError::usage(format!(
-                "the local model `{local_text}` must be ollama:<model> or gguf:<file>, such as {DEFAULT_LOCAL}"
-            )));
-        }
+        (None, None) => match snet_pull::catalog_model(&local_text) {
+            Some(model) => {
+                let path = snet_pull::pulled_path(&home, model).ok_or_else(|| {
+                    CommandError::configuration(format!(
+                        "{local_text} is not pulled yet; run `snet pull {local_text}`"
+                    ))
+                })?;
+                gguf_config(&path.display().to_string())?
+            }
+            None => {
+                return Err(CommandError::usage(format!(
+                    "the local model `{local_text}` must be a pulled model such as qwen3:4b, ollama:<model> or gguf:<file>"
+                )));
+            }
+        },
     };
     let bounds = LocalBounds {
         context_tokens: arguments.context.unwrap_or(DEFAULT_CONTEXT_TOKENS),
@@ -122,18 +134,6 @@ pub fn resolve(
     let local = local
         .with_bounds(bounds)
         .map_err(|error| CommandError::usage(error.to_string()))?;
-
-    let home = match environment.variable("SNET_HOME")? {
-        Some(home) if !home.is_empty() => PathBuf::from(home),
-        _ => environment
-            .home_directory()
-            .map(|home| home.join(".snet"))
-            .ok_or_else(|| {
-                CommandError::configuration(
-                    "the home directory is unknown; set SNET_HOME to a directory for transcripts",
-                )
-            })?,
-    };
 
     let rounds = arguments.rounds.unwrap_or(DEFAULT_ROUNDS);
     if !(2..=8).contains(&rounds) {
@@ -162,6 +162,42 @@ pub fn resolve(
             local_requests: 512,
         },
     })
+}
+
+/// Where snet keeps transcripts and pulled models: `SNET_HOME`, or `.snet`
+/// in the home directory.
+pub fn home(environment: &dyn Environment) -> Result<PathBuf, CommandError> {
+    match environment.variable("SNET_HOME")? {
+        Some(home) if !home.is_empty() => Ok(PathBuf::from(home)),
+        _ => environment
+            .home_directory()
+            .map(|home| home.join(".snet"))
+            .ok_or_else(|| {
+                CommandError::configuration(
+                    "the home directory is unknown; set SNET_HOME to a directory for transcripts",
+                )
+            }),
+    }
+}
+
+/// The pulled default model, else any pulled model, else Ollama's. A
+/// build without the engine cannot run pulled models.
+#[cfg(feature = "gguf")]
+pub fn default_local(home: &std::path::Path) -> String {
+    let pulled = snet_pull::pulled_models(home);
+    let chosen = pulled
+        .iter()
+        .find(|(model, _)| model.name == snet_pull::DEFAULT_MODEL)
+        .or_else(|| pulled.first());
+    match chosen {
+        Some((model, _)) => model.name.to_string(),
+        None => DEFAULT_LOCAL.to_string(),
+    }
+}
+
+#[cfg(not(feature = "gguf"))]
+pub fn default_local(_home: &std::path::Path) -> String {
+    DEFAULT_LOCAL.to_string()
 }
 
 #[cfg(feature = "gguf")]

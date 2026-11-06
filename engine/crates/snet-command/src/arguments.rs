@@ -4,6 +4,7 @@ use std::path::PathBuf;
 use crate::exit::CommandError;
 
 pub const USAGE: &str = "usage: snet                                  (interactive, in a terminal)
+       snet pull [model]                     (qwen3:4b, qwen3:1.7b or qwen3:8b)
        snet ask [options] <question> [<file>...]
 
 A model on your machine reads the files. A cloud model plans the work and
@@ -52,6 +53,8 @@ pub struct AskArguments {
 pub enum Command {
     /// No arguments: the interactive session, when run in a terminal.
     Interactive,
+    /// `snet pull [model]`: download a local model.
+    Pull(Option<String>),
     Ask(Box<AskArguments>),
     Help,
     Version,
@@ -75,6 +78,8 @@ pub fn parse(arguments: &[String]) -> Result<Command, CommandError> {
     let words: Vec<&str> = arguments.iter().map(String::as_str).collect();
     match words.as_slice() {
         [] => Ok(Command::Interactive),
+        ["pull"] => Ok(Command::Pull(None)),
+        ["pull", name] => Ok(Command::Pull(Some(name.to_string()))),
         ["--help" | "-h" | "help"] => Ok(Command::Help),
         ["--version" | "-V"] => Ok(Command::Version),
         ["ask", rest @ ..] => ask(rest).map(|parsed| Command::Ask(Box::new(parsed))),

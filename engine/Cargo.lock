@@ -1948,6 +1948,7 @@ dependencies = [
  "snet-local",
  "snet-protocol",
  "snet-pseudonym",
+ "snet-pull",
  "snet-relay",
  "snet-testkit",
  "snet-transcript",
@@ -2047,6 +2048,26 @@ dependencies = [
  "toml",
  "unicode-normalization",
  "zeroize",
+]
+
+[[package]]
+name = "snet-pull"
+version = "0.1.0"
+dependencies = [
+ "bytes",
+ "http",
+ "http-body-util",
+ "hyper",
+ "rustls",
+ "rustls-pki-types",
+ "sha2",
+ "snet-testkit",
+ "snet-wire",
+ "tempfile",
+ "thiserror",
+ "tokio",
+ "tokio-rustls",
+ "webpki-roots",
 ]
 
 [[package]]
