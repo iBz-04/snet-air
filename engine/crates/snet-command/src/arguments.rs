@@ -4,7 +4,7 @@ use std::path::PathBuf;
 use crate::exit::CommandError;
 
 pub const USAGE: &str = "usage: snet                                  (interactive, in a terminal)
-       snet pull [model]                     (qwen3:4b, qwen3:1.7b or qwen3:8b)
+       snet pull [model]                     (qwen3:4b, or qwen3:8b)
        snet ask [options] <question> [<file>...]
 
 A model on your machine reads the files. A cloud model plans the work and

@@ -14,14 +14,7 @@ pub struct CatalogModel {
 pub const DEFAULT_MODEL: &str = "qwen3:4b";
 
 /// Sizes and hashes as the host's model API lists them (`lfs.oid`).
-pub const CATALOG: [CatalogModel; 3] = [
-    CatalogModel {
-        name: "qwen3:1.7b",
-        file: "Qwen_Qwen3-1.7B-Q4_K_M.gguf",
-        url: "https://huggingface.co/bartowski/Qwen_Qwen3-1.7B-GGUF/resolve/main/Qwen_Qwen3-1.7B-Q4_K_M.gguf",
-        bytes: 1_282_439_584,
-        sha256: "72c5c3cb38fa32d5256e2fe30d03e7a64c6c79e668ad84057e3bd66e250b24fb",
-    },
+pub const CATALOG: [CatalogModel; 2] = [
     CatalogModel {
         name: "qwen3:4b",
         file: "Qwen_Qwen3-4B-Q4_K_M.gguf",
