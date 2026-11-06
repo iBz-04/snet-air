@@ -28,13 +28,14 @@ cargo install --locked --git https://github.com/iBz-04/snet-air snet-command --f
 curl -L -o qwen3-4b.gguf https://huggingface.co/bartowski/Qwen_Qwen3-4B-GGUF/resolve/main/Qwen_Qwen3-4B-Q4_K_M.gguf
 ```
 
-**2. Run `snet`.** It asks for your cloud, key and local model, then takes questions. Attach files with `@`:
+**2. Run `snet`.** It asks for your cloud, key and local model, then takes questions. Ask anything; attach files with `@` and only the local model reads them:
 
 ```
+❯ What is TCP slow start?
 ❯ Who signed the contract? @contract.txt
 ```
 
-For scripts: `snet ask "Who signed the contract?" contract.txt`
+For scripts: `snet ask "What is TCP slow start?"` or `snet ask "Who signed the contract?" contract.txt`
 
 | Cloud | Flag | Key |
 |---|---|---|
@@ -50,7 +51,7 @@ For scripts: `snet ask "Who signed the contract?" contract.txt`
 
 ## Privacy
 
-- Your files are read only by the local model.
+- Your files are read only by the local model. Questions without files go to the cloud model directly.
 - Personal data is pseudonymised before anything is sent.
 - Everything sent is logged in `~/.snet/transcripts/`.
 
