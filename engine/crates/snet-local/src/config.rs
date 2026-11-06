@@ -100,10 +100,7 @@ impl LocalConfig {
                 "it must be 1 to 128 letters, digits, `_`, `-`, `.`, `:` or `/`",
             ));
         }
-        let address = match ollama_host {
-            None => DEFAULT_OLLAMA_ADDRESS,
-            Some(text) => loopback_address(text)?,
-        };
+        let address = ollama_address(ollama_host)?;
         Ok(Self {
             backend: Backend::Ollama { address },
             model: model.to_string(),
@@ -212,6 +209,15 @@ impl LocalConfig {
 
     pub fn max_output_tokens(&self) -> u64 {
         self.max_output_tokens
+    }
+}
+
+/// Where Ollama listens: `OLLAMA_HOST` as Ollama reads it, or
+/// 127.0.0.1:11434 when it is unset. Only this machine is accepted.
+pub fn ollama_address(ollama_host: Option<&str>) -> Result<SocketAddr, ConfigError> {
+    match ollama_host {
+        None => Ok(DEFAULT_OLLAMA_ADDRESS),
+        Some(text) => loopback_address(text),
     }
 }
 

@@ -11,8 +11,8 @@ mod gguf;
 mod reply;
 mod request;
 
-pub use client::LocalModel;
-pub use config::{Backend, DEFAULT_OLLAMA_ADDRESS, LocalBounds, LocalConfig};
+pub use client::{LocalModel, ollama_models};
+pub use config::{Backend, DEFAULT_OLLAMA_ADDRESS, LocalBounds, LocalConfig, ollama_address};
 pub use errors::{ConfigError, LocalError};
 pub use reply::{ListedModel, LocalAnswer};
 pub use request::LocalRequest;

@@ -275,3 +275,11 @@ async fn concurrent_requests_stay_within_the_permits() {
         .load(std::sync::atomic::Ordering::SeqCst);
     assert!(most <= 4, "{most} chat requests were in flight at once");
 }
+
+#[tokio::test]
+async fn the_model_list_names_every_pulled_model_in_order() {
+    let server = Server::start(tags("qwen3:4b", DIGEST), Chat::Stall).await;
+    let address = crate::ollama_address(Some(&server.kit.address.to_string())).unwrap();
+    let names = ollama_models(address).await.unwrap();
+    assert_eq!(names, vec!["other:1b".to_string(), "qwen3:4b".to_string()]);
+}

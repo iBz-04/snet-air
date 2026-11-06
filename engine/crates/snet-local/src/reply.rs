@@ -110,6 +110,15 @@ fn names_match(listed: &str, requested: &str) -> bool {
                 .is_some_and(|base| base == requested))
 }
 
+/// The names of every model Ollama lists, in its order.
+pub(crate) fn listed_names(reply: &RawReply) -> Result<Vec<String>, LocalError> {
+    check_json_reply(reply)?;
+    let list: TagList = serde_json::from_slice(&reply.body).map_err(|error| {
+        LocalError::malformed(format!("the model list: {}", describe_json_error(&error)))
+    })?;
+    Ok(list.models.into_iter().map(|entry| entry.name).collect())
+}
+
 pub(crate) fn listed_model(reply: &RawReply, model: &str) -> Result<ListedModel, LocalError> {
     check_json_reply(reply)?;
     let list: TagList = serde_json::from_slice(&reply.body).map_err(|error| {

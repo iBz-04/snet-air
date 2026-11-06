@@ -8,8 +8,23 @@ use tokio::sync::Semaphore;
 use crate::config::{Backend, LocalConfig};
 use crate::errors::LocalError;
 use crate::exchange::exchange;
-use crate::reply::{ListedModel, LocalAnswer, answer, listed_model};
+use crate::reply::{ListedModel, LocalAnswer, answer, listed_model, listed_names};
 use crate::request::{LocalRequest, build_body, check_request};
+
+const MODEL_LIST_BYTES_CAP: u64 = 1_048_576;
+
+/// The models the Ollama server at `address` has pulled.
+pub async fn ollama_models(address: SocketAddr) -> Result<Vec<String>, LocalError> {
+    let tags = exchange(
+        address,
+        Method::GET,
+        "/api/tags",
+        None,
+        MODEL_LIST_BYTES_CAP,
+    )
+    .await?;
+    listed_names(&tags)
+}
 
 pub struct LocalModel {
     config: LocalConfig,
