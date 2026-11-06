@@ -61,7 +61,7 @@ fn help_and_version_are_commands() {
 fn mistakes_are_named() {
     assert!(refused("nonsense").starts_with("usage: snet"));
     assert!(refused("ask").contains("needs a question"));
-    assert!(refused("ask Who?").contains("at least one file"));
+    assert!(parse(&words("ask Who?")).is_ok());
     assert!(refused("ask Who? a.txt a.txt").contains("named twice"));
     assert!(refused("ask --rounds").contains("needs a value"));
     assert!(refused("ask --rounds two Who? a.txt").contains("whole number"));

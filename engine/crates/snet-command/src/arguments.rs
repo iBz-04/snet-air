@@ -4,10 +4,11 @@ use std::path::PathBuf;
 use crate::exit::CommandError;
 
 pub const USAGE: &str = "usage: snet                                  (interactive, in a terminal)
-       snet ask [options] <question> <file>...
+       snet ask [options] <question> [<file>...]
 
 A model on your machine reads the files. A cloud model plans the work and
 writes the answer from what the local model reports; it never sees the files.
+With no files, the cloud model answers the question directly.
 
 options:
   --fanout                  split large files into chunks and run small jobs on each
@@ -128,13 +129,8 @@ fn ask(words: &[&str]) -> Result<AskArguments, CommandError> {
     let mut positional = positional.into_iter();
     parsed.question = positional
         .next()
-        .ok_or_else(|| CommandError::usage("ask needs a question and at least one file"))?;
+        .ok_or_else(|| CommandError::usage("ask needs a question"))?;
     parsed.files = positional.collect();
-    if parsed.files.is_empty() {
-        return Err(CommandError::usage(
-            "ask needs at least one file after the question",
-        ));
-    }
     for (index, file) in parsed.files.iter().enumerate() {
         if !snet_protocol::name_is_valid(file) {
             return Err(CommandError::usage(format!(

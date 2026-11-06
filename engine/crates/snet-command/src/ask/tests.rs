@@ -57,6 +57,12 @@ struct Run {
 
 /// Runs one conversation task against a scripted cloud and Ollama.
 async fn run(cloud_script: Vec<Value>, ollama: Ollama) -> Run {
+    run_with_files(true, cloud_script, ollama).await
+}
+
+/// One `snet ask` against scripted servers, with the shift log as its file
+/// or with no file at all.
+async fn run_with_files(with_files: bool, cloud_script: Vec<Value>, ollama: Ollama) -> Run {
     let pki = TestPki::new().unwrap();
     let replies: Arc<Vec<Vec<u8>>> = Arc::new(cloud_script.into_iter().map(cloud_reply).collect());
     let behaviour = Behaviour::Handle(Arc::new(move |index, _request| {
@@ -115,7 +121,11 @@ async fn run(cloud_script: Vec<Value>, ollama: Ollama) -> Run {
     ]);
     let arguments = AskArguments {
         question: "Which seal of pump 3 was replaced, and who reported the leak?".to_string(),
-        files: vec!["shift-log.txt".to_string()],
+        files: if with_files {
+            vec!["shift-log.txt".to_string()]
+        } else {
+            Vec::new()
+        },
         ..AskArguments::default()
     };
     let settings = settings::resolve(&arguments, &environment).unwrap();
@@ -123,10 +133,14 @@ async fn run(cloud_script: Vec<Value>, ollama: Ollama) -> Run {
         settings,
         question: arguments.question.clone(),
         policy: Policy::builtin().unwrap(),
-        files: vec![Document {
-            name: "shift-log.txt".to_string(),
-            text: LOG.to_string(),
-        }],
+        files: if with_files {
+            vec![Document {
+                name: "shift-log.txt".to_string(),
+                text: LOG.to_string(),
+            }]
+        } else {
+            Vec::new()
+        },
         endpoint: EndpointConfig::parse(
             &endpoint_text(cloud.port),
             &snet_testkit::certificates::read_from(directory.path()),
@@ -136,7 +150,7 @@ async fn run(cloud_script: Vec<Value>, ollama: Ollama) -> Run {
     let mut output = Vec::new();
     let mut errors = Vec::new();
     let local = LocalModel::new(prepared.settings.local.clone());
-    let exit = match execute(prepared, &local).await {
+    let exit = match execute(prepared, Some(&local), &[]).await {
         Ok(finished) => report(finished, &mut output, &mut errors),
         Err(error) => Err(error),
     };
@@ -268,4 +282,27 @@ async fn a_stopped_ollama_is_reported_before_anything_is_sent() {
     assert!(error.message.contains("ollama serve"), "{}", error.message);
     assert!(result.cloud_bodies.is_empty());
     assert!(result.transcript.is_empty());
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn a_question_without_files_is_answered_by_the_cloud_alone() {
+    let result = run_with_files(
+        false,
+        vec![json!({"answer": "Slow start doubles the window each round trip."})],
+        Ollama::Down,
+    )
+    .await;
+    assert_eq!(result.exit, Ok(Exit::Success));
+    assert_eq!(
+        result.output,
+        "Slow start doubles the window each round trip.\n"
+    );
+    assert!(
+        result.errors.contains("question 1, cloud requests 1"),
+        "{}",
+        result.errors
+    );
+    assert_eq!(result.cloud_bodies.len(), 1);
+    assert_eq!(result.transcript[0]["kind"], "direct_started");
+    assert_eq!(result.transcript.last().unwrap()["outcome"], "answer");
 }
