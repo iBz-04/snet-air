@@ -7,7 +7,7 @@
 </p>
 
 <div align="center">
-<p><b>Two models, one answer. Your data stays yours.</b></p>
+<p><b>Two models, one great answer and no data risks </b></p>
 </div>
 
 snet pairs a small model on your computer with a large model in the cloud. The local model reads everything first. It answers what it can on its own; for the rest, it removes anything private and hands the cloud only the short question that's left. Your files never leave your machine, and the cloud reads far fewer tokens.
