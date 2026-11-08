@@ -2,20 +2,24 @@
 //! and a prompt that answers questions about attached files, through the
 //! same settings, checks and protocols as `snet ask`.
 
+mod help;
 mod local;
 mod overlay;
+mod palette;
 mod prompt;
 mod render;
 mod setup;
 mod theme;
+mod wordmark;
 
 use std::io::ErrorKind;
 use std::path::Path;
 use std::time::Duration;
 
-use console::{Style, Term};
+use console::Term;
 use dialoguer::{BasicHistory, Input};
 use indicatif::{ProgressBar, ProgressStyle};
+use snet_cloud::Provider;
 use snet_local::LocalModel;
 use snet_relay::{EarlierExchange, MAX_EARLIER_EXCHANGES, Route};
 
@@ -25,15 +29,18 @@ use crate::environment::Environment;
 use crate::exit::{CommandError, Exit};
 use crate::settings;
 use overlay::OverlayEnvironment;
+use palette::APPLE_GREY;
 use prompt::Line;
-use theme::{accent, dim};
+use theme::{accent, dim, success};
+use wordmark::Wordmark;
 
-const SPINNER_FRAMES: [&str; 7] = ["✻", "✳", "✢", "·", "✢", "✳", "✻"];
+const SPINNER_FRAMES: [&str; 10] = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"];
 
 /// What stays the same between the questions of one session.
 struct Session {
     cloud: String,
     cloud_url: Option<String>,
+    provider: Provider,
     local: String,
     files: Vec<String>,
     fanout: bool,
@@ -121,6 +128,7 @@ pub fn run(environment: &dyn Environment) -> Result<Exit, CommandError> {
     let mut session = Session {
         cloud: cloud.cloud,
         cloud_url: cloud.cloud_url,
+        provider: cloud.provider,
         local: local_text,
         files: Vec::new(),
         fanout: false,
@@ -157,7 +165,11 @@ pub fn run(environment: &dyn Environment) -> Result<Exit, CommandError> {
         match prompt::parse(&line) {
             Line::Empty => {}
             Line::Exit => break,
-            Line::Help => print_lines(&help_lines(&session)),
+            Line::Help => print_lines(&help::lines(
+                session.provider,
+                &session.local,
+                &session.cloud,
+            )),
             Line::Details => {
                 if session.details.is_empty() {
                     println!("  {}", dim().apply_to("Nothing answered yet."));
@@ -224,8 +236,8 @@ fn ready_local(
     spinner.finish_and_clear();
     ready.map_err(|error| CommandError::configuration(format!("the local model: {error}")))?;
     println!(
-        "{} {}",
-        Style::new().green().apply_to("✔"),
+        "  {} {}",
+        success().apply_to("✓"),
         dim().apply_to(format!("{} is ready", session.local_model_name()))
     );
     Ok(local)
@@ -284,24 +296,31 @@ fn answer(
                     answer: text.as_str().to_string(),
                 });
             }
-            let (answerer, answered_by, sent) = match route {
-                Some(Route::Local) => (render::Answerer::Local, local_name, None),
+            let (byline, answered_by, sent) = match route {
+                Some(Route::Local) => (
+                    render::byline(Wordmark::local(), session.local_model_name(), None),
+                    local_name,
+                    None,
+                ),
                 Some(Route::Cloud { sent_question }) => (
-                    render::Answerer::Cloud,
+                    cloud_byline(session, None),
                     cloud_name,
                     Some(sent_question.as_str()),
                 ),
                 None => (
-                    render::Answerer::Cloud,
+                    cloud_byline(session, Some(session.local_model_name())),
                     format!("{cloud_name}, from what {local_name} read in your files"),
                     None,
                 ),
             };
-            print_lines(&render::answer(text.as_str(), citations, answerer));
+            print_lines(&render::answer(&byline, text.as_str(), citations));
             render::details(&answered_by, sent, Some(spending), &transcript)
         }
         Ended::NotFound { text, spending } => {
-            print_lines(&render::not_found(text.as_str()));
+            print_lines(&render::not_found(
+                &cloud_byline(session, Some(session.local_model_name())),
+                text.as_str(),
+            ));
             render::details(&cloud_name, None, Some(spending), &transcript)
         }
         Ended::Failed(error) => {
@@ -314,6 +333,16 @@ fn answer(
         }
     };
     (remembered, details)
+}
+
+/// The byline of an answer the session's cloud model wrote, naming the
+/// local model when the cloud worked from what it read in files.
+fn cloud_byline(session: &Session, read_by: Option<&str>) -> Vec<String> {
+    render::byline(
+        Wordmark::cloud(session.provider),
+        session.cloud_model_name(),
+        read_by,
+    )
 }
 
 fn attach_files(session: &mut Session, attach: Vec<String>) {
@@ -344,41 +373,13 @@ fn print_files(session: &Session) {
     }
 }
 
-fn help_lines(session: &Session) -> Vec<String> {
-    let row = |command: &str, meaning: &str| {
-        format!(
-            "  {} {}",
-            accent().apply_to(format!("{command:<10}")),
-            dim().apply_to(meaning)
-        )
-    };
-    vec![
-        row("@file", "attach a file; only your machine reads it"),
-        row(
-            "/details",
-            "who answered the last question, and what the cloud read",
-        ),
-        row("/files", "list attached files"),
-        row("/clear", "detach all files and forget earlier questions"),
-        row("/fanout", "read large files in chunks"),
-        row("/exit", "quit"),
-        String::new(),
-        format!(
-            "  {} answered on your machine   {} answered by the cloud",
-            Style::new().green().apply_to("●"),
-            accent().apply_to("●")
-        ),
-        format!(
-            "  {}",
-            dim().apply_to(format!("local {} · cloud {}", session.local, session.cloud))
-        ),
-    ]
-}
-
 fn spinner(message: &'static str) -> Result<ProgressBar, CommandError> {
-    let style = ProgressStyle::with_template("{spinner:.cyan} {msg} {elapsed:.dim}")
-        .map_err(|error| CommandError::failed(format!("the spinner template: {error}")))?
-        .tick_strings(&SPINNER_FRAMES);
+    let grey = APPLE_GREY.dotted();
+    let style = ProgressStyle::with_template(&format!(
+        "  {{spinner:.{grey}}} {{msg:.{grey}}} {{elapsed:.{grey}}}"
+    ))
+    .map_err(|error| CommandError::failed(format!("the spinner template: {error}")))?
+    .tick_strings(&SPINNER_FRAMES);
     let spinner = ProgressBar::new_spinner();
     spinner.set_style(style);
     spinner.set_message(message);

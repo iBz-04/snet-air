@@ -12,6 +12,7 @@ use crate::settings::DEFAULT_CLOUD;
 pub struct CloudChoice {
     pub cloud: String,
     pub cloud_url: Option<String>,
+    pub provider: Provider,
 }
 
 struct CloudOption {
@@ -59,19 +60,14 @@ pub fn choose_cloud(
     theme: &ColorfulTheme,
     overlay: &mut OverlayEnvironment,
 ) -> Result<CloudChoice, CommandError> {
-    let choice = match overlay.variable("SNET_CLOUD")? {
-        Some(cloud) if !cloud.is_empty() => CloudChoice {
-            cloud,
-            cloud_url: overlay.variable("SNET_CLOUD_URL")?,
-        },
-        _ if has_value(overlay, Provider::Anthropic.key_variable())? => CloudChoice {
-            cloud: DEFAULT_CLOUD.to_string(),
-            cloud_url: None,
-        },
+    let (cloud, cloud_url) = match overlay.variable("SNET_CLOUD")? {
+        Some(cloud) if !cloud.is_empty() => (cloud, overlay.variable("SNET_CLOUD_URL")?),
+        _ if has_value(overlay, Provider::Anthropic.key_variable())? => {
+            (DEFAULT_CLOUD.to_string(), None)
+        }
         _ => ask_cloud(theme, overlay)?,
     };
-    let provider_name = choice
-        .cloud
+    let provider_name = cloud
         .split_once(':')
         .map(|(name, _)| name)
         .unwrap_or(DEFAULT_CLOUD);
@@ -81,13 +77,19 @@ pub fn choose_cloud(
         ))
     })?;
     ensure_key(theme, overlay, provider)?;
-    Ok(choice)
+    Ok(CloudChoice {
+        cloud,
+        cloud_url,
+        provider,
+    })
 }
 
+/// Asks which cloud and model to use; returns the cloud as `snet ask
+/// --cloud` takes it and, for an OpenAI-compatible server, its URL.
 fn ask_cloud(
     theme: &ColorfulTheme,
     overlay: &OverlayEnvironment,
-) -> Result<CloudChoice, CommandError> {
+) -> Result<(String, Option<String>), CommandError> {
     let mut labels = Vec::with_capacity(CLOUD_OPTIONS.len());
     let mut first_with_key = None;
     for (index, option) in CLOUD_OPTIONS.iter().enumerate() {
@@ -144,10 +146,10 @@ fn ask_cloud(
         ),
         _ => None,
     };
-    Ok(CloudChoice {
-        cloud: format!("{}:{}", option.provider.name(), model.trim()),
+    Ok((
+        format!("{}:{}", option.provider.name(), model.trim()),
         cloud_url,
-    })
+    ))
 }
 
 fn ensure_key(

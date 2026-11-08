@@ -1,59 +1,28 @@
-use console::{Style, measure_text_width, style};
+use console::{Style, measure_text_width};
 use dialoguer::theme::ColorfulTheme;
 
-/// The block letters of the welcome banner, one string per row.
-const BANNER: [&str; 5] = [
-    " ████ █   █ █████ █████    ███  ███ ████ ",
-    "█     ██  █ █       █     █   █  █  █   █",
-    " ███  █ █ █ ████    █     █████  █  ████ ",
-    "    █ █  ██ █       █     █   █  █  █  █ ",
-    "████  █   █ █████   █     █   █ ███ █   █",
-];
+use super::palette::{APPLE_BLUE, APPLE_GREEN, APPLE_GREY, APPLE_ORANGE, APPLE_RED};
 
-/// The banner rows shade from cyan to blue, top to bottom.
-const BANNER_COLOURS: [u8; 5] = [51, 45, 39, 33, 27];
-
+/// The one accent colour: commands, menu choices and the prompt mark.
 pub fn accent() -> Style {
-    Style::new().color256(39).bold()
+    APPLE_BLUE.style().bold()
 }
 
+/// Secondary text: hints, paths, model names and quoted passages.
 pub fn dim() -> Style {
-    Style::new().dim()
+    APPLE_GREY.style()
 }
 
-pub fn banner() -> Vec<String> {
-    BANNER
-        .iter()
-        .zip(BANNER_COLOURS)
-        .map(|(row, colour)| format!("  {}", style(row).color256(colour)))
-        .collect()
+pub fn success() -> Style {
+    APPLE_GREEN.style()
 }
 
-/// `lines` inside a rounded box as wide as the widest line.
-pub fn boxed(lines: &[String]) -> Vec<String> {
-    let width = lines
-        .iter()
-        .map(|line| measure_text_width(line))
-        .max()
-        .unwrap_or(0);
-    let border = accent();
-    let mut boxed = vec![format!(
-        "{}",
-        border.apply_to(format!("╭{}╮", "─".repeat(width + 2)))
-    )];
-    for line in lines {
-        let padding = " ".repeat(width - measure_text_width(line));
-        boxed.push(format!(
-            "{} {line}{padding} {}",
-            border.apply_to("│"),
-            border.apply_to("│")
-        ));
-    }
-    boxed.push(format!(
-        "{}",
-        border.apply_to(format!("╰{}╯", "─".repeat(width + 2)))
-    ));
-    boxed
+pub fn warning() -> Style {
+    APPLE_ORANGE.style()
+}
+
+pub fn failure() -> Style {
+    APPLE_RED.style().bold()
 }
 
 /// Directories longer than this are shown by their last characters.
@@ -84,45 +53,56 @@ pub fn short_directory(directory: &str, home: Option<&str>) -> String {
     format!("…{tail}")
 }
 
-/// The welcome screen: banner, then a box with the version, the working
-/// directory and how to begin.
+const PURPOSE: &str = "A local model reads your files. A cloud model does the thinking.";
+
+/// The welcome header: the name and version, what snet does, the working
+/// directory and a hairline as wide as the widest of them.
 pub fn welcome(version: &str, directory: &str) -> Vec<String> {
-    let mut lines = vec![String::new()];
-    lines.extend(banner());
-    lines.push(String::new());
-    lines.extend(boxed(&[
+    let rows = [
         format!(
-            "{} {}",
-            accent().apply_to("✻ Welcome to snet-air"),
+            "{}  {}",
+            Style::new().bold().apply_to("snet-air"),
             dim().apply_to(version)
         ),
-        String::new(),
-        "A local model reads your files. A cloud model does the thinking.".to_string(),
-        "Your files stay on your machine.".to_string(),
-        String::new(),
-        format!("{}", dim().apply_to(format!("cwd: {directory}"))),
-    ]));
+        PURPOSE.to_string(),
+        format!("{}", dim().apply_to(directory)),
+    ];
+    let width = rows
+        .iter()
+        .map(|row| measure_text_width(row))
+        .max()
+        .unwrap_or(0);
+    let mut lines = vec![String::new()];
+    lines.extend(rows.iter().map(|row| format!("  {row}")));
+    lines.push(format!("  {}", dim().apply_to("─".repeat(width))));
     lines
 }
 
-/// Menus and prompts in the session's colours.
+/// Menus and prompts in the session's colours. They draw on standard
+/// error, so each style follows standard error's colour setting.
 pub fn prompts() -> ColorfulTheme {
     ColorfulTheme {
-        prompt_prefix: style("?".to_string()).color256(39).bold(),
-        active_item_prefix: style("❯".to_string()).color256(39).bold(),
-        active_item_style: Style::new().color256(39).bold(),
-        success_prefix: style("✔".to_string()).green(),
-        values_style: Style::new().color256(39),
+        prompt_prefix: accent().for_stderr().apply_to("?".to_string()),
+        hint_style: dim().for_stderr(),
+        defaults_style: dim().for_stderr(),
+        active_item_prefix: accent().for_stderr().apply_to("›".to_string()),
+        active_item_style: accent().for_stderr(),
+        picked_item_prefix: accent().for_stderr().apply_to("›".to_string()),
+        success_prefix: success().for_stderr().apply_to("✓".to_string()),
+        success_suffix: dim().for_stderr().apply_to("·".to_string()),
+        error_prefix: failure().for_stderr().apply_to("✗".to_string()),
+        error_style: failure().for_stderr(),
+        values_style: APPLE_BLUE.style().for_stderr(),
         ..ColorfulTheme::default()
     }
 }
 
-/// The question line: a `❯` and the text, kept dimmed once entered.
+/// The question line: a `›` and the text, kept dimmed once entered.
 pub fn question_prompt() -> ColorfulTheme {
     ColorfulTheme {
-        prompt_suffix: style("❯".to_string()).color256(39).bold(),
-        success_suffix: style("❯".to_string()).dim(),
-        values_style: Style::new(),
+        prompt_suffix: accent().for_stderr().apply_to("›".to_string()),
+        success_suffix: dim().for_stderr().apply_to("›".to_string()),
+        values_style: Style::new().for_stderr(),
         ..ColorfulTheme::default()
     }
 }
@@ -130,12 +110,6 @@ pub fn question_prompt() -> ColorfulTheme {
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    #[test]
-    fn every_banner_row_has_the_same_width() {
-        let width = BANNER[0].chars().count();
-        assert!(BANNER.iter().all(|row| row.chars().count() == width));
-    }
 
     #[test]
     fn long_directories_are_shortened_from_the_left() {
@@ -148,12 +122,20 @@ mod tests {
     }
 
     #[test]
-    fn the_box_pads_every_line_to_the_widest() {
-        let lines = boxed(&["ab".to_string(), "abcd".to_string()]);
-        let plain: Vec<String> = lines
+    fn the_header_names_the_version_and_directory_over_a_hairline() {
+        let plain: Vec<String> = welcome("v1.2.3", "~/work")
             .iter()
             .map(|line| console::strip_ansi_codes(line).to_string())
             .collect();
-        assert_eq!(plain, vec!["╭──────╮", "│ ab   │", "│ abcd │", "╰──────╯"]);
+        assert_eq!(
+            plain,
+            vec![
+                String::new(),
+                "  snet-air  v1.2.3".to_string(),
+                format!("  {PURPOSE}"),
+                "  ~/work".to_string(),
+                format!("  {}", "─".repeat(PURPOSE.chars().count())),
+            ]
+        );
     }
 }
