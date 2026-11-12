@@ -39,7 +39,7 @@ jobs:
         run: rustup toolchain install && rustup target add ${{ matrix.target }}
       # The engine uses Vulkan on Linux and Windows and needs its SDK to build.
       - if: matrix.os == 'ubuntu-latest'
-        uses: jakoch/install-vulkan-sdk-action@3bf4ed432a5958c13d41590b264229022d011c00 # v1.2.5
+        uses: jakoch/install-vulkan-sdk-action@7fe84289ddbf750f7eff9f8e4588e600e1dd06c8 # v1.8.1
         with:
           vulkan_version: 1.4.304.0
           cache: true
@@ -48,7 +48,7 @@ jobs:
       # Ninja avoids the Visual Studio generator's failing shader-tool install
       # step, and a short target path keeps under Windows' path limit.
       - if: matrix.os == 'windows-latest'
-        uses: jakoch/install-vulkan-sdk-action@37effcfa045411f8bfbbda26df2fd1b3bf3436fa # v1.6.0
+        uses: jakoch/install-vulkan-sdk-action@7fe84289ddbf750f7eff9f8e4588e600e1dd06c8 # v1.8.1
         with:
           vulkan_version: 1.4.328.1
           install_runtime: false
